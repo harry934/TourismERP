@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <base target="_top">
+  <title>Lamai Africa Safaris</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="">
+  <meta name="theme-color" content="#a27d45">
+</head>
+<body class="is-auth">
+  <div id="toast-host" class="lamai-toast-host"></div>
+  <div id="splash" class="splash" hidden>
+    <img class="splash-mark" alt="Lamai Africa Safaris" data-lamai-logo src="">
+    <div class="splash-caption">Lamai Africa Safaris</div>
+  </div>
+
+  <div id="auth-root"></div>
+
+  <div id="overlay" class="overlay"></div>
+
+  <nav id="topbar" class="navbar bg-white border-bottom fixed-top topbar px-3 d-none">
+    <button id="toggleBtn" class="d-none d-lg-inline-flex btn btn-light btn-icon btn-sm" type="button" aria-label="Collapse sidebar">
+      <i class="ti ti-layout-sidebar-left-expand"></i>
+    </button>
+    <button id="mobileBtn" class="btn btn-light btn-icon btn-sm d-lg-none me-2" type="button" aria-label="Open menu">
+      <i class="ti ti-layout-sidebar-left-expand"></i>
+    </button>
+    <div class="top-search flex-grow-1 px-2 px-lg-4">
+      <label class="visually-hidden" for="workspace-search">Search</label>
+      <input id="workspace-search" class="form-control" type="search" placeholder="Search clients, files, staff" autocomplete="off">
+      <div id="search-results" class="search-panel d-none" role="listbox"></div>
+    </div>
+    <div class="ms-auto">
+      <ul class="list-unstyled d-flex align-items-center mb-0 gap-1">
+        <li class="dropdown">
+          <button id="work-bell" class="position-relative btn-icon btn-sm btn-light btn rounded-circle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Notifications">
+            <i class="ti ti-bell"></i>
+            <span id="due-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger mt-2 ms-n2 d-none">0</span>
+          </button>
+          <div id="notice-panel" class="dropdown-menu dropdown-menu-end p-0 notice-panel">
+            <div class="border-bottom px-3 py-2">
+              <strong class="small">Updates</strong>
+            </div>
+            <div id="notice-list" class="notice-list">
+              <p class="text-secondary small px-3 py-3 mb-0">Nothing due.</p>
+            </div>
+            <div class="border-top px-3 py-2">
+              <a class="small" href="#/work" target="_self">Open all follow-ups</a>
+            </div>
+          </div>
+        </li>
+        <li class="ms-3 dropdown">
+          <a href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false" class="d-inline-flex">
+            <span id="user-avatar" class="avatar avatar-sm rounded-circle avatar-primary">
+              <span class="avatar-initials" id="user-initials">L</span>
+            </span>
+          </a>
+          <div class="dropdown-menu dropdown-menu-end p-0" style="min-width: 220px;">
+            <div class="border-bottom px-3 py-3">
+              <h4 class="mb-0 small" id="user-name">Staff</h4>
+              <p class="mb-0 small text-secondary" id="user-meta"></p>
+            </div>
+            <div class="p-3 d-flex flex-column gap-1 small">
+              <a href="#/change-password" target="_self">Change password</a>
+              <a href="#/sign-out" target="_self" id="sign-out-link">Sign out</a>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <aside id="sidebar" class="sidebar d-none">
+    <div class="logo-area">
+      <a href="#/today" target="_self" class="d-inline-flex align-items-center text-decoration-none">
+        <span class="logo-plate"><img data-lamai-logo src="" alt=""></span>
+        <span class="logo-text ms-2 logo-wordmark">Lamai Safaris</span>
+      </a>
+    </div>
+    <ul class="nav flex-column">
+      <li class="px-4 py-2"><small class="nav-text">Work</small></li>
+      <li><a class="nav-link" href="#/today" target="_self" data-title="Today"><i class="ti ti-home"></i><span class="nav-text">Today</span></a></li>
+      <li><a class="nav-link" href="#/pipeline" target="_self" data-title="Pipeline"><i class="ti ti-layout-kanban"></i><span class="nav-text">Pipeline</span></a></li>
+      <li><a class="nav-link" href="#/enquiries" target="_self" data-title="Enquiries"><i class="ti ti-file-text"></i><span class="nav-text">Enquiries</span></a></li>
+      <li><a class="nav-link" href="#/clients" target="_self" data-title="Clients"><i class="ti ti-users"></i><span class="nav-text">Clients</span></a></li>
+      <li><a class="nav-link" href="#/work" target="_self" data-title="Work"><i class="ti ti-calendar-event"></i><span class="nav-text">Work</span></a></li>
+      <li class="px-4 pt-4 pb-2 admin-only"><small class="nav-text">Admin</small></li>
+      <li class="admin-only"><a class="nav-link" href="#/payments" target="_self" data-title="Payments"><i class="ti ti-cash"></i><span class="nav-text">Payments</span></a></li>
+      <li class="admin-only"><a class="nav-link" href="#/reports" target="_self" data-title="Reports"><i class="ti ti-chart-bar"></i><span class="nav-text">Reports</span></a></li>
+      <li class="admin-only"><a class="nav-link" href="#/settings" target="_self" data-title="Settings"><i class="ti ti-settings"></i><span class="nav-text">Settings</span></a></li>
+    </ul>
+  </aside>
+
+  <main id="content" class="content py-10 d-none">
+    <div class="container-fluid">
+      <div id="page-alert"></div>
+      <div id="page"></div>
+    </div>
+  </main>
+
+  <script type="module" src="./assets/js/main.js"></script>
+</body>
+</html>

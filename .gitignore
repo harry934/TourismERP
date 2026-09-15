@@ -1,0 +1,12 @@
+node_modules/
+web/node_modules/
+web/dist/
+src/Index.html
+inapp-1.0.0/
+*.log
+.env
+.env.*
+/logo.jpg
+/2025-Logo-*.png
+web/src/assets/images/lamai-logo.png
+.vscode/
