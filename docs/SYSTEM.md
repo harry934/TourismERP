@@ -336,7 +336,7 @@ Internal helpers (underscore names) are not callable from the UI. Important ones
 | Change theme colour | `$lamai-gold` / `$primary` in `_variables.scss` |
 | Change Today card colours | `statCard` tones + `$success` `$warning` `$danger` in `_variables.scss` |
 | Change button size | `$input-btn-padding-y/x` and `.btn-sm` in `_lamai.scss` |
-| Change logo | `web/src/assets/images/lamai-logo.jpg` then `npm run build:ui` |
+| Change logo | `web/src/assets/images/lamai-logo.svg` then `npm run build:ui` |
 | Change CSV column mapping | `HEADER_MAP` in `csv.js` |
 | Change search | `searchWorkspace` in `EnquiryService.gs` |
 | Change report columns | `generateDepartmentReport` / `exportReportCsv` in `ReportService.gs` (see [`REPORTS.md`](REPORTS.md)) |

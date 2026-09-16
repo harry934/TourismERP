@@ -1,0 +1,29 @@
+<svg class="lamai-mark" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lamai Africa Safaris">
+  <title>Lamai Africa Safaris</title>
+  <g class="lamai-mark__rings" fill="none" stroke="#1f1a14" stroke-linecap="round">
+    <path class="lamai-mark__ring lamai-mark__ring--outer" d="M176.43 197.67 A96 96 0 1 1 193.54 58.29" stroke-width="4.4" stroke-dasharray="0.01 12.6"/>
+    <path class="lamai-mark__ring lamai-mark__ring--mid" d="M161.33 186.15 A78 78 0 1 1 177.97 67.81" stroke-width="3.1" stroke-dasharray="0.01 11.2"/>
+    <path class="lamai-mark__ring lamai-mark__ring--inner" d="M147.18 175.73 A62 62 0 1 1 163.07 75.40" stroke-width="2.4" stroke-dasharray="0.01 10.2"/>
+  </g>
+  <path class="lamai-mark__crescent" fill="#a27d45" d="M178 36 C214 54 232 92 228 132 C224 174 202 208 170 220 C202 192 216 154 214 124 C212 88 198 54 178 36 Z"/>
+  <g class="lamai-mark__arrows" stroke="#1f1a14" fill="#1f1a14">
+    <g class="lamai-mark__arrow lamai-mark__arrow--left" transform="translate(120 120) rotate(-39)">
+      <path class="lamai-mark__shaft" pathLength="1" d="M0 54 V-47" stroke-width="2.35" stroke-linecap="round"/>
+      <path class="lamai-mark__head" fill="#a27d45" stroke="none" d="M0-63 L-7.6-44.2 0-48.4 7.6-44.2 Z"/>
+      <g class="lamai-mark__feather">
+        <path d="M0 46 C-6 54-8 64-3 74 C-1 66 0 56 0 52 C0 56 1 66 3 74 C8 64 6 54 0 46 Z"/>
+        <path d="M0 48 C-11 54-14 66-9 76 C-4 66-1 56 0 50 Z" transform="rotate(-32 0 52)"/>
+        <path d="M0 48 C11 54 14 66 9 76 C4 66 1 56 0 50 Z" transform="rotate(32 0 52)"/>
+      </g>
+    </g>
+    <g class="lamai-mark__arrow lamai-mark__arrow--right" transform="translate(120 120) rotate(39)">
+      <path class="lamai-mark__shaft" pathLength="1" d="M0 54 V-47" stroke-width="2.35" stroke-linecap="round"/>
+      <path class="lamai-mark__head" fill="#a27d45" stroke="none" d="M0-63 L-7.6-44.2 0-48.4 7.6-44.2 Z"/>
+      <g class="lamai-mark__feather">
+        <path d="M0 46 C-6 54-8 64-3 74 C-1 66 0 56 0 52 C0 56 1 66 3 74 C8 64 6 54 0 46 Z"/>
+        <path d="M0 48 C-11 54-14 66-9 76 C-4 66-1 56 0 50 Z" transform="rotate(-32 0 52)"/>
+        <path d="M0 48 C11 54 14 66 9 76 C4 66 1 56 0 50 Z" transform="rotate(32 0 52)"/>
+      </g>
+    </g>
+  </g>
+</svg>

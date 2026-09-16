@@ -1,7 +1,7 @@
 import { api, setToken, clearToken } from './api.js';
 import { COUNTRY_CODES } from './country-codes.js';
 import { closeMobileSidebar } from './sidebar.js';
-import logoUrl from './logo.js';
+import logoUrl, { logoSvg, paintLogos } from './logo.js';
 import { mapClientCsv, SAMPLE_CLIENT_CSV } from './csv.js';
 
 const STAGES = [
@@ -378,23 +378,22 @@ function bindHashLinks() {
 }
 
 async function playSplash() {
-  document.querySelectorAll('img[data-lamai-logo]').forEach((img) => {
-    img.src = logoUrl;
-  });
+  paintLogos();
   const favicon = document.querySelector('link[rel="icon"]');
   if (favicon) favicon.setAttribute('href', logoUrl);
   const splash = document.getElementById('splash');
   if (!splash) return;
-  if (window.sessionStorage.getItem('lamaiSplashSeen') === '1') {
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion || window.sessionStorage.getItem('lamaiSplashSeen') === '1') {
     splash.classList.add('is-hidden');
     splash.hidden = true;
     return;
   }
   splash.hidden = false;
   splash.classList.remove('is-hidden', 'is-done');
-  await new Promise((resolve) => window.setTimeout(resolve, 400));
+  await new Promise((resolve) => window.setTimeout(resolve, 1700));
   splash.classList.add('is-done');
-  await new Promise((resolve) => window.setTimeout(resolve, 180));
+  await new Promise((resolve) => window.setTimeout(resolve, 480));
   splash.classList.add('is-hidden');
   splash.hidden = true;
   window.sessionStorage.setItem('lamaiSplashSeen', '1');
@@ -461,7 +460,7 @@ function authCard(title, body) {
       <div class="card" style="max-width:420px;width:100%;">
         <div class="card-body p-5">
           <div class="text-center mb-4">
-            <span class="logo-plate d-inline-flex"><img data-lamai-logo src="${escapeHtml(logoUrl)}" alt=""></span>
+            <span class="logo-plate d-inline-flex">${logoSvg}</span>
             <h1 class="h5 mt-3 mb-1">${escapeHtml(title)}</h1>
             <p class="text-secondary small mb-0">Lamai Africa Safaris</p>
           </div>
