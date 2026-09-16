@@ -121,10 +121,10 @@ All routing is in `route()` in `app.js`.
 | `#/handovers` | `renderHandovers` | All | Incoming/outgoing handovers |
 | `#/archive` | `renderArchive` | All | Closed/archived files in scope |
 | `#/payments` | `renderPayments` | Admin/Accounts | Payment rows; mark received |
-| `#/reports` | `renderReports` | All (scoped) | Role-filtered counts + CSV |
+| `#/reports` | `renderReports` | All (scoped) | Period filters + department KPIs + CSV |
 | `#/settings` | `renderSettings` | Admin only | Company profile, staff, reference labels |
 | `#/change-password` | `renderChangePassword` | Signed in | Current / new / confirm password |
-| `#/sign-out` | `route` | Signed in | Calls `logout`, clears token |
+| `#/sign-out` | `route` | Signed in | Centered **Signing out…**, then `logout` + clear token |
 | (no session) | `renderSignIn` | Public | Username + password |
 | (empty Users) | `renderSetup` | Public | Create first Super Admin |
 
@@ -141,9 +141,9 @@ Defined in [`web/src/index.html`](../web/src/index.html), wired in `bindChromeTo
 | Overlay click | Closes mobile sidebar |
 | Wordmark **Lamai Safaris** | Goes to `#/today` |
 | Nav: Today / Pipeline / Enquiries / Clients / Work | Hash links (`bindHashLinks` keeps them inside the Apps Script iframe) |
-| Nav: Payments / Reports / Settings | Super Admin only |
+| Nav: Payments / Reports / Settings | Role-gated via `data-module` + permissions |
 | Collapsed icon hover | CSS `data-title` tooltip |
-| Search box | After 2 characters, `searchWorkspace`; results jump to client/enquiry/settings |
+| Search box | After 2 characters (300ms debounce), `searchWorkspace`; results jump to client/enquiry/settings |
 | Bell | Dropdown of overdue, due today, unpaid (admin), pending handovers. Unread badge until opened |
 | “Open all follow-ups” | `#/work` |
 | Avatar menu | Change password, Sign out |
@@ -228,11 +228,13 @@ Defined in [`web/src/index.html`](../web/src/index.html), wired in `bindChromeTo
 | --- | --- | --- |
 | Mark received | `markPaymentPaid` | Same as enquiry detail |
 
-### Reports (admin)
+### Reports
 
 | Control | Calls | Effect |
 | --- | --- | --- |
-| Download Excel | `exportReportCsv` | UTF-8 BOM CSV Excel opens |
+| Period / date / department / staff / stage / status | (filters) | Staff department is read-only; Admin may choose one dept or All |
+| Generate | `generateDepartmentReport` | Header, KPIs, exceptions, files, handovers, diary |
+| Download Excel | `exportReportCsv` | Same filters as last generated report (UTF-8 BOM CSV) |
 
 ### Settings (admin)
 
@@ -253,13 +255,13 @@ Auth: `PUBLIC_METHODS_` need no token. `AUTH_WITHOUT_PASSWORD_GATE_` allow a ses
 
 | Method | File | Auth | What it does |
 | --- | --- | --- | --- |
-| `getBootstrap` | AuthService | Optional session | Ensures spreadsheet schema; returns session, **permissions**, staff, references, due count |
+| `getBootstrap` | AuthService | Optional session | Schema ensure throttled via CacheService; returns session, **permissions**, staff, references, cached due count |
 | `setupSuperAdmin` | AuthService | Public, once | First Super Admin + sheets |
 | `login` | AuthService | Public | Verifies password, creates cache session |
 | `logout` | AuthService | Session optional | Removes `sess:{token}` from CacheService |
 | `changePassword` | AuthService | Session (password gate skipped) | Re-hash password |
-| `getDashboardData` | EnquiryService | Signed in | Live files, by department, handovers, revenue, due/overdue, payments |
-| `listEnquiries` | EnquiryService | Signed in | Scoped trip files; `liveOnly` / `includeArchived` |
+| `getDashboardData` | EnquiryService | Signed in | KPIs + capped action queues (≈15) and file table (≈25) |
+| `listEnquiries` | EnquiryService | Signed in | Scoped trip files; `liveOnly` / `includeArchived` / `limit` / `offset` |
 | `listArchivedEnquiries` | EnquiryService | Signed in | Closed/archived files in scope |
 | `getEnquiryDetail` | EnquiryService | Signed in | Enquiry + activities + masked payments + handovers |
 | `createEnquiry` | EnquiryService | Signed in | New trip file |
@@ -281,8 +283,9 @@ Auth: `PUBLIC_METHODS_` need no token. `AUTH_WITHOUT_PASSWORD_GATE_` allow a ses
 | `generatePaymentMilestones` | PaymentService | Admin/Accounts/Sales | Deposit + balance from quoted amount |
 | `markPaymentPaid` | PaymentService | Admin/Accounts | Mark received; may advance stage |
 | `updatePayment` | PaymentService | Admin/Accounts | Amount/status/note |
-| `getReportData` | ReportService | Role reports | Scoped department/stage counts |
-| `exportReportCsv` | ReportService | Role reports | CSV string + filename |
+| `getReportData` | ReportService | Role reports | Snapshot counts (legacy summary) |
+| `generateDepartmentReport` | ReportService | Role reports | Daily/weekly/monthly department report payload |
+| `exportReportCsv` | ReportService | Role reports | CSV for department report filters (or legacy snapshot) |
 | `getAdminData` | AdminService | Super Admin | Staff list, settings map, references |
 | `createUser` | AdminService | Super Admin | Staff account + one-time password |
 | `updateUser` | AdminService | Super Admin | Name / work label / active flag |
@@ -294,14 +297,27 @@ Auth: `PUBLIC_METHODS_` need no token. `AUTH_WITHOUT_PASSWORD_GATE_` allow a ses
 
 Internal helpers (underscore names) are not callable from the UI. Important ones:
 
-- `ensureHarryWorkspace_` — if a spreadsheet id exists, ensure columns/seed lists; **does not wipe data and does not seed a password**
+- `ensureHarryWorkspace_` — schema ensure throttled (~10 min CacheService flag); **does not wipe data**
+- `clearRequestCaches_` — per-RPC sheet memo cleared at start of `api()`
+- `readAllRecords_` — memoized per request; includes last data row
 - `hashPassword_` / `verifyPassword_` — salted SHA-256, 32 rounds
 - `deleteRecord_` / `deleteRecordsWhere_` / `deleteRecordsInSet_` — physical row deletes
 - `recordAudit_` — append-only AuditLog
 
 ---
 
-## 9. Permanent delete rules
+## 9. Performance notes
+
+- **Request memo:** each `api()` call clears `_requestSheetCache_`; a sheet is read at most once per RPC.
+- **Config cache:** Settings and ReferenceData use CacheService (~5 min); invalidated on `updateSettings` / `saveReferenceItem`.
+- **Due count:** cached ~2 min; cleared when enquiries/follow-ups change.
+- **Schema ensure:** skipped when `cfg:schemaOk` is set; forced on login/setup or `getBootstrap({ forceSchema: true })`.
+- **Client:** bootstrap is held in session memory and not re-fetched on every hash change.
+- **UX:** page loads use a centered spinner (`.lamai-loading`); sign-out shows **Signing out…** before redirect.
+
+---
+
+## 10. Permanent delete rules
 
 **Client:** Super Admin types the guest’s full name. Deletes Clients row, then Enquiries with that `clientId`, then Activities, Payments, and Handovers for those enquiry ids. Writes `CLIENT_DELETED` to AuditLog.
 
@@ -309,7 +325,7 @@ Internal helpers (underscore names) are not callable from the UI. Important ones
 
 ---
 
-## 10. Where to change X
+## 11. Where to change X
 
 | If you want to… | Start here |
 | --- | --- |
@@ -322,12 +338,12 @@ Internal helpers (underscore names) are not callable from the UI. Important ones
 | Change logo | `web/src/assets/images/lamai-logo.jpg` then `npm run build:ui` |
 | Change CSV column mapping | `HEADER_MAP` in `csv.js` |
 | Change search | `searchWorkspace` in `EnquiryService.gs` |
-| Change report columns | `exportReportCsv` in `ReportService.gs` |
+| Change report columns | `generateDepartmentReport` / `exportReportCsv` in `ReportService.gs` (see [`REPORTS.md`](REPORTS.md)) |
 | Tighten staff data visibility | Filters in `listEnquiries` / `getDashboardData` / `getWorkData` |
 
 ---
 
-## 11. UI helpers in `app.js` (not screens)
+## 12. UI helpers in `app.js` (not screens)
 
 | Function | Role |
 | --- | --- |

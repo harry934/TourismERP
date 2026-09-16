@@ -18,6 +18,19 @@ function decorateEnquiry_(enquiry, session) {
   return copy;
 }
 
+function applyListPaging_(items, payload) {
+  var total = items.length;
+  var limit = asNumber_(payload && payload.limit, 0);
+  var offset = Math.max(asNumber_(payload && payload.offset, 0) || 0, 0);
+  if (limit > 0) {
+    limit = Math.min(limit, 500);
+    items = items.slice(offset, offset + limit);
+  } else {
+    limit = 0;
+  }
+  return { items: items, total: total, limit: limit, offset: offset };
+}
+
 function listEnquiries(payload, session) {
   requireModule_(session, 'enquiries');
   var liveOnly = !!(payload && payload.liveOnly);
@@ -35,12 +48,16 @@ function listEnquiries(payload, session) {
   items = filterEnquiriesForSession_(items, session).map(function (enquiry) {
     return decorateEnquiry_(enquiry, session);
   });
-  return { items: items };
+  return applyListPaging_(items, payload);
 }
 
 function listArchivedEnquiries(payload, session) {
   requireModule_(session, 'archive');
-  return listEnquiries({ includeArchived: true }, session);
+  return listEnquiries({
+    includeArchived: true,
+    limit: payload && payload.limit,
+    offset: payload && payload.offset
+  }, session);
 }
 
 function getEnquiryDetail(payload, session) {
@@ -72,6 +89,7 @@ function createEnquiry(payload, session) {
   requireAction_(session, 'createEnquiry', 'Only Sales or Admin can create a new enquiry.');
   var record = buildEnquiry_(payload, session, null);
   upsertRecord_(APP_CONFIG.SHEETS.Enquiries, record);
+  bumpDueCountCache_();
   recordAudit_(session.userId, 'ENQUIRY_CREATED', 'Enquiry', record.enquiryId, record.stage);
   createActivityRecord_(session, record.enquiryId, 'stage', 'File opened at ' + record.stage, '', {
     department: record.department,
@@ -105,6 +123,7 @@ function updateEnquiry(payload, session) {
     record.archived = true;
   }
   upsertRecord_(APP_CONFIG.SHEETS.Enquiries, record);
+  bumpDueCountCache_();
   if (previousStage !== record.stage) {
     createActivityRecord_(session, record.enquiryId, 'stage', 'Stage changed to ' + record.stage, '', {
       department: record.department,
@@ -324,15 +343,23 @@ function createActivityRecord_(session, enquiryId, type, summary, dueAt, extras)
       else if (dueAt) enquiry.nextAction = summary;
       enquiry.updatedAt = nowIso_();
       upsertRecord_(APP_CONFIG.SHEETS.Enquiries, enquiry);
+      bumpDueCountCache_();
     }
   }
   return record;
+}
+
+function capList_(items, max) {
+  if (!items || items.length <= max) return items || [];
+  return items.slice(0, max);
 }
 
 function getDashboardData(payload, session) {
   requireModule_(session, 'dashboard');
   var roleId = resolveRoleId_(session);
   var widgets = dashboardWidgetsForRole_(roleId);
+  var queueCap = 15;
+  var tableCap = 25;
   var allLive = listEnquiries({ liveOnly: true }, session).items;
   var enquiries = allLive;
   var myFiles = enquiries.filter(function (item) {
@@ -409,18 +436,19 @@ function getDashboardData(payload, session) {
   });
 
   var pendingHandovers = listPendingHandovers_(session);
+  var liveTable = widgets.companyFiles ? enquiries : myFiles;
 
   return {
     roleId: roleId,
     widgets: widgets,
-    live: widgets.companyFiles ? enquiries : myFiles,
+    live: capList_(liveTable, tableCap),
     liveCount: enquiries.length,
-    myFiles: myFiles,
+    myFiles: capList_(myFiles, tableCap),
     myFilesCount: myFiles.length,
     totalEnquiries: enquiries.length,
-    dueToday: work.dueToday,
-    overdue: work.overdue,
-    paymentsDue: paymentsDue,
+    dueToday: capList_(work.dueToday, queueCap),
+    overdue: capList_(work.overdue, queueCap),
+    paymentsDue: capList_(paymentsDue, queueCap),
     byDepartment: APP_CONFIG.DEPARTMENTS.map(function (dept) {
       return { department: dept, count: byDepartment[dept] || 0 };
     }),
@@ -437,7 +465,7 @@ function getDashboardData(payload, session) {
     opsInProgress: opsInProgress,
     upcomingTravel: upcomingTravel,
     missingBookingRef: missingBookingRef,
-    pendingHandovers: pendingHandovers,
+    pendingHandovers: capList_(pendingHandovers, queueCap),
     pendingHandoverCount: pendingHandovers.length,
     bySource: widgets.bySource ? Object.keys(bySource).map(function (key) {
       return { source: key, count: bySource[key] };

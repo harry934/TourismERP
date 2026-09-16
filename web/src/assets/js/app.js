@@ -49,6 +49,7 @@ const SEEN_KEY = 'lamai.notifSeen';
 
 const state = {
   bootstrap: null,
+  bootstrapToken: '',
   session: null,
   signInPassword: '',
   notices: null,
@@ -186,11 +187,27 @@ function setBusy(button, busy, label) {
   if (button.dataset.idleHtml) button.innerHTML = button.dataset.idleHtml;
 }
 
-function showPageLoading() {
+function showPageLoading(message) {
   const page = document.getElementById('page');
   if (page) {
-    page.innerHTML = '<div class="text-secondary py-5 d-flex align-items-center gap-2"><span class="spinner-border spinner-border-sm" role="status"></span> Loading…</div>';
+    page.innerHTML = `<div class="lamai-loading d-flex flex-column align-items-center justify-content-center py-5" style="min-height:40vh">
+      <span class="spinner-border text-primary" role="status" aria-hidden="true"></span>
+      <div class="mt-3 text-secondary">${escapeHtml(message || 'Loading…')}</div>
+    </div>`;
   }
+}
+
+function showSigningOut() {
+  setChrome(true);
+  const page = document.getElementById('page');
+  const auth = document.getElementById('auth-root');
+  if (page) {
+    page.innerHTML = `<div class="lamai-loading d-flex flex-column align-items-center justify-content-center py-5" style="min-height:40vh">
+      <span class="spinner-border text-primary" role="status" aria-hidden="true"></span>
+      <div class="mt-3 text-secondary">Signing out…</div>
+    </div>`;
+  }
+  if (auth) auth.innerHTML = '';
 }
 
 function bindCopyButtons(root) {
@@ -483,7 +500,7 @@ function renderSetup() {
       });
       setToken(data.token);
       state.session = data.session;
-      await refreshBootstrap();
+      await refreshBootstrap(true);
       notify('Workspace ready.', 'success');
       go('#/today');
     } catch (error) {
@@ -518,7 +535,7 @@ function renderSignIn() {
       state.session = data.session;
       window.localStorage.setItem(USERNAME_KEY, username);
       if (data.session && data.session.mustChangePassword) state.signInPassword = password;
-      await refreshBootstrap();
+      await refreshBootstrap(true);
       notify('Signed in.', 'success');
       go(data.session.mustChangePassword ? '#/change-password' : '#/today');
     } catch (error) {
@@ -567,7 +584,7 @@ function renderChangePassword() {
       state.session = result.session || state.session;
       if (state.session) state.session.mustChangePassword = false;
       state.signInPassword = '';
-      await refreshBootstrap();
+      await refreshBootstrap(true);
       notify('Password updated.', 'success');
       go('#/today');
     } catch (error) {
@@ -1405,61 +1422,166 @@ async function renderPayments() {
   });
 }
 
-async function renderReports() {
-  const data = await api('getReportData', {});
-  document.getElementById('page').innerHTML = `
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-      <div><h1 class="fs-3 mb-1">Reports</h1><p class="text-secondary mb-0">Department and stage counts for the ops board.</p></div>
-      <button class="btn btn-primary" id="download-excel" type="button">Download Excel</button>
-    </div>
+function reportFilterPayload(form) {
+  const data = new FormData(form);
+  const payload = {
+    period: String(data.get('period') || 'daily'),
+    date: String(data.get('date') || ''),
+    department: String(data.get('department') || ''),
+    staffId: String(data.get('staffId') || ''),
+    stage: String(data.get('stage') || ''),
+    status: String(data.get('status') || '')
+  };
+  if (!isAdmin()) {
+    payload.department = (state.session && state.session.department) || '';
+  }
+  return payload;
+}
+
+function renderReportResult(report) {
+  const header = report.header || {};
+  const kpis = report.kpis || [];
+  const toneMap = { primary: 'primary', warning: 'warning', danger: 'danger', success: 'success', info: 'info' };
+  return `
+    <div class="card mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+          <h2 class="h5 mb-1">${escapeHtml(header.title || 'Report')}</h2>
+          <p class="text-secondary mb-0 small">${escapeHtml(header.startDate || '')} → ${escapeHtml(header.endDate || '')}
+            · ${escapeHtml(header.department || '')}
+            · Ref ${escapeHtml(report.reportRef || '')}
+            · ${escapeHtml(header.generatedBy || '')}</p>
+        </div>
+        <button class="btn btn-outline-primary" id="download-excel" type="button">Download Excel</button>
+      </div>
+    </div></div>
     <div class="row g-3 mb-4">
-      ${statCard('ti-files', 'Live files', data.liveCount || 0, 'primary')}
-      ${statCard('ti-alert-circle', 'Overdue follow-ups', data.overdueCount || 0, 'danger')}
-      ${statCard('ti-cash', 'Unpaid milestones', data.unpaidCount || 0, 'warning')}
-      ${statCard('ti-transfer', 'Pending handovers', data.pendingHandoverCount || 0, 'info')}
+      ${kpis.map((kpi) => statCard('ti-chart-bar', kpi.label, typeof kpi.value === 'number' ? kpi.value.toLocaleString() : kpi.value, toneMap[kpi.tone] || 'primary')).join('') || '<div class="col-12 text-secondary">No KPIs for this scope.</div>'}
     </div>
-    <div class="row g-3 mb-4">
-      ${statCard('ti-check', 'Confirmed bookings', data.confirmedBookings || 0, 'success')}
-      ${statCard('ti-flag', 'Completed trips', data.completedTrips || 0, 'success')}
-      ${statCard('ti-cash', 'Est. revenue', (data.estimatedRevenue || 0).toLocaleString(), 'warning')}
-    </div>
-    <div class="row g-3 mb-4">
-      <div class="col-lg-6"><div class="card"><div class="card-body">
-        <h2 class="h6">By department</h2>
-        <div class="table-responsive"><table class="table">
-          <thead><tr><th>Department</th><th>Count</th></tr></thead>
-          <tbody>${(data.byDepartment || []).map((row) => `<tr><td>${escapeHtml(row.department)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('')}</tbody>
-        </table></div>
-      </div></div></div>
-      <div class="col-lg-6"><div class="card"><div class="card-body">
+    ${(report.exceptions || []).length ? `<div class="card mb-3"><div class="card-body">
+      <h2 class="h6">Exceptions</h2>
+      <div class="table-responsive"><table class="table align-middle">
+        <thead><tr><th>Kind</th><th>Guest</th><th>Summary</th></tr></thead>
+        <tbody>${report.exceptions.map((row) => `<tr>
+          <td>${escapeHtml(row.kind)}</td>
+          <td><a href="#/enquiries/${escapeHtml(row.enquiryId)}">${escapeHtml(row.clientName || row.enquiryId)}</a></td>
+          <td>${escapeHtml(row.summary || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div></div>` : ''}
+    <div class="row g-3 mb-3">
+      <div class="col-lg-4"><div class="card"><div class="card-body">
         <h2 class="h6">By stage</h2>
         <div class="table-responsive"><table class="table">
           <thead><tr><th>Stage</th><th>Count</th></tr></thead>
-          <tbody>${(data.byStage || []).map((row) => `<tr><td>${escapeHtml(row.stage)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('')}</tbody>
+          <tbody>${(report.byStage || []).map((row) => `<tr><td>${escapeHtml(row.stage)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="text-secondary">None</td></tr>'}</tbody>
         </table></div>
+      </div></div></div>
+      <div class="col-lg-8"><div class="card"><div class="card-body">
+        <h2 class="h6 mb-3">Files (${escapeHtml(report.recordTotal || (report.records || []).length)})</h2>
+        ${(report.records || []).length
+          ? `<div class="table-responsive"><table class="table table-clickable align-middle">
+            <thead><tr><th>Guest</th><th>Stage</th><th>Dept</th><th>Owner</th><th>Travel</th><th>Follow-up</th></tr></thead>
+            <tbody>${(report.records || []).map(enquiryRow).join('')}</tbody>
+          </table></div>`
+          : '<p class="text-secondary mb-0">No files in this period.</p>'}
       </div></div></div>
     </div>
     <div class="row g-3">
       <div class="col-lg-6"><div class="card"><div class="card-body">
-        <h2 class="h6">By source</h2>
-        <div class="table-responsive"><table class="table">
-          <thead><tr><th>Source</th><th>Count</th></tr></thead>
-          <tbody>${(data.bySource || []).map((row) => `<tr><td>${escapeHtml(row.source)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="text-secondary">No data</td></tr>'}</tbody>
-        </table></div>
+        <h2 class="h6">Handovers</h2>
+        ${listOrEmpty(report.handovers, (item) => `<div class="border-bottom py-2">
+          <a href="#/enquiries/${escapeHtml(item.enquiryId)}">${escapeHtml(item.clientName || item.enquiryId)}</a>
+          <div class="small text-secondary">${escapeHtml(item.fromDepartment || '—')} → ${escapeHtml(item.toDepartment)} · ${escapeHtml(formatDate(item.handoverDate))} · ${escapeHtml(item.ackStatus || '')}</div>
+        </div>`)}
       </div></div></div>
       <div class="col-lg-6"><div class="card"><div class="card-body">
-        <h2 class="h6">By destination</h2>
-        <div class="table-responsive"><table class="table">
-          <thead><tr><th>Destination</th><th>Count</th></tr></thead>
-          <tbody>${(data.byDestination || []).map((row) => `<tr><td>${escapeHtml(row.destination)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="text-secondary">No data</td></tr>'}</tbody>
-        </table></div>
+        <h2 class="h6">Diary</h2>
+        ${listOrEmpty(report.activities, (item) => `<div class="border-bottom py-2">
+          <div class="small text-secondary">${escapeHtml(item.type || '')} · ${escapeHtml(item.enquiryId)} · ${escapeHtml(formatDate(item.createdAt))}</div>
+          <div>${escapeHtml(item.summary || '')}</div>
+        </div>`)}
       </div></div></div>
     </div>`;
-  document.getElementById('download-excel').addEventListener('click', async (event) => {
-    const button = event.currentTarget;
+}
+
+async function renderReports() {
+  const today = (state.bootstrap && state.bootstrap.today) || new Date().toISOString().slice(0, 10);
+  const roleId = permissions().roleId || '';
+  const lockedDept = (state.session && state.session.department) || '';
+  const staff = ((state.bootstrap && state.bootstrap.staff) || []).filter((person) => {
+    if (isAdmin()) return true;
+    return person.department === lockedDept;
+  });
+  const stages = ['', ...roleStages(), 'Closed', 'Archived'];
+
+  document.getElementById('page').innerHTML = `
+    <div class="mb-4">
+      <h1 class="fs-3 mb-1">Reports</h1>
+      <p class="text-secondary mb-0">Daily, weekly, and monthly department reports. Export matches what you see on screen.</p>
+    </div>
+    <form id="report-filters" class="card mb-3"><div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Period</label>
+          <select class="form-select" name="period">
+            <option value="daily" selected>Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Date</label>
+          <input class="form-control" type="date" name="date" value="${escapeHtml(today)}" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Department</label>
+          ${isAdmin()
+            ? `<select class="form-select" name="department">
+                <option value="ALL">All departments</option>
+                ${DEPARTMENTS.map((dept) => `<option value="${escapeHtml(dept)}">${escapeHtml(dept)}</option>`).join('')}
+              </select>`
+            : `<input class="form-control" name="department" value="${escapeHtml(lockedDept)}" readonly>
+               <div class="form-text">Locked to your department (${escapeHtml(roleId)}).</div>`}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Staff</label>
+          <select class="form-select" name="staffId">
+            <option value="">All staff</option>
+            ${staff.map((person) => `<option value="${escapeHtml(person.userId)}">${escapeHtml(person.displayName)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Stage</label>
+          <select class="form-select" name="stage">
+            ${stages.map((stage) => `<option value="${escapeHtml(stage)}">${escapeHtml(stage || 'Any stage')}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">File status</label>
+          <select class="form-select" name="status">
+            <option value="">Any status</option>
+            ${FILE_STATUSES.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-6 d-flex gap-2 justify-content-md-end">
+          <button class="btn btn-primary" type="submit" id="generate-report">Generate</button>
+        </div>
+      </div>
+    </div></form>
+    <div id="report-result"><div class="text-secondary">Choose a period and generate a report.</div></div>`;
+
+  const form = document.getElementById('report-filters');
+  let lastPayload = null;
+
+  const runExport = async (button) => {
+    if (!lastPayload) {
+      notify('Generate a report first.', 'warning');
+      return;
+    }
     setBusy(button, true, 'Preparing…');
     try {
-      const file = await api('exportReportCsv', {});
+      const file = await api('exportReportCsv', lastPayload);
       const blob = new Blob(['\uFEFF' + (file.csv || '')], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1469,6 +1591,27 @@ async function renderReports() {
       URL.revokeObjectURL(url);
       setBusy(button, false);
       notify('Report downloaded. Open it in Excel.', 'success');
+    } catch (error) {
+      setBusy(button, false);
+      notify(error.message, 'danger');
+    }
+  };
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = document.getElementById('generate-report');
+    const payload = reportFilterPayload(form);
+    setBusy(button, true, 'Generating…');
+    try {
+      const report = await api('generateDepartmentReport', payload);
+      lastPayload = payload;
+      document.getElementById('report-result').innerHTML = renderReportResult(report);
+      bindTableLinks();
+      const download = document.getElementById('download-excel');
+      if (download) {
+        download.addEventListener('click', () => runExport(download));
+      }
+      setBusy(button, false);
     } catch (error) {
       setBusy(button, false);
       notify(error.message, 'danger');
@@ -1729,7 +1872,7 @@ function bindChromeTools() {
           results.innerHTML = `<div class="px-3 py-3 small text-danger">${escapeHtml(error.message)}</div>`;
           results.classList.remove('d-none');
         }
-      }, 250);
+      }, 300);
     });
     results.addEventListener('click', () => {
       hide();
@@ -1747,10 +1890,21 @@ function bindChromeTools() {
   }
 }
 
-async function refreshBootstrap() {
-  state.bootstrap = await api('getBootstrap', {});
+async function refreshBootstrap(force) {
+  state.bootstrap = await api('getBootstrap', force ? { forceSchema: true } : {});
   state.session = state.bootstrap.session || state.session;
+  state.bootstrapToken = window.localStorage.getItem('lamai.token') || '';
   if (state.bootstrap.dueCount != null) setChrome(!!state.session);
+  return state.bootstrap;
+}
+
+async function ensureBootstrap(force) {
+  const token = window.localStorage.getItem('lamai.token') || '';
+  if (!force && state.bootstrap && state.bootstrapToken === token && state.bootstrap.session) {
+    state.session = state.bootstrap.session;
+    return state.bootstrap;
+  }
+  return refreshBootstrap(force);
 }
 
 function requireAdmin() {
@@ -1819,20 +1973,26 @@ async function route() {
   showAlert('');
   const info = parseHash();
   if (info.path === '/sign-out') {
+    showSigningOut();
     try { await api('logout', {}); } catch (error) { /* ignore */ }
     clearToken();
     state.session = null;
+    state.bootstrap = null;
+    state.bootstrapToken = '';
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+    if (seq !== route.seq) return;
     go('#/sign-in');
     return;
   }
 
-  if (window.localStorage.getItem('lamai.token')) {
+  const hasToken = !!window.localStorage.getItem('lamai.token');
+  if (hasToken) {
     setChrome(true);
-    showPageLoading();
+    if (!state.bootstrap || !state.bootstrap.session) showPageLoading();
   }
 
   try {
-    state.bootstrap = await api('getBootstrap', {});
+    await ensureBootstrap(false);
   } catch (error) {
     if (seq !== route.seq) return;
     document.getElementById('auth-root').innerHTML = authCard('Cannot reach workspace', `<p class="text-secondary">${escapeHtml(error.message)}</p>`);
@@ -1901,6 +2061,8 @@ async function route() {
     if (seq !== route.seq) return;
     if (error.code === 'UNAUTHENTICATED') {
       clearToken();
+      state.bootstrap = null;
+      state.bootstrapToken = '';
       go('#/sign-in');
       return;
     }

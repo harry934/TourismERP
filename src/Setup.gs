@@ -78,14 +78,19 @@ function seedReferences_() {
 }
 
 function readSettingsMap_() {
+  var cached = cacheGetJson_('cfg:settings');
+  if (cached) return cached;
   var settings = {};
   readAllRecords_(APP_CONFIG.SHEETS.Settings.name).forEach(function (row) {
     if (row.key) settings[row.key] = row.value;
   });
+  cachePutJson_('cfg:settings', settings, 300);
   return settings;
 }
 
 function groupedReferences_() {
+  var cached = cacheGetJson_('cfg:references');
+  if (cached) return cached;
   var destinations = [];
   var styles = [];
   readAllRecords_(APP_CONFIG.SHEETS.ReferenceData.name).forEach(function (item) {
@@ -93,10 +98,14 @@ function groupedReferences_() {
     if (item.kind === 'destination') destinations.push(item);
     if (item.kind === 'style') styles.push(item);
   });
-  return { destinations: destinations, styles: styles };
+  var result = { destinations: destinations, styles: styles };
+  cachePutJson_('cfg:references', result, 300);
+  return result;
 }
 
 function ensureHarryWorkspace_() {
   if (!getSpreadsheetId_()) return;
+  if (cacheGetJson_('cfg:schemaOk')) return;
   initializeWorkspace_();
+  cachePutJson_('cfg:schemaOk', { ok: true }, 600);
 }

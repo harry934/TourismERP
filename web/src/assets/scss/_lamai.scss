@@ -374,6 +374,11 @@ body .btn.btn-outline-primary:focus {
   color: $gray-500;
 }
 
+.lamai-loading {
+  width: 100%;
+  text-align: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .splash-mark,
   .splash-caption,

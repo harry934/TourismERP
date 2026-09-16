@@ -124,6 +124,7 @@ function updateSettings(payload, session) {
       updatedAt: nowIso_()
     });
   });
+  invalidateConfigCaches_();
   return { settings: readSettingsMap_() };
 }
 
@@ -146,5 +147,6 @@ function saveReferenceItem(payload, session) {
   record.label = label;
   record.isActive = payload.isActive == null ? true : asBoolean_(payload.isActive);
   upsertRecord_(APP_CONFIG.SHEETS.ReferenceData, record);
+  invalidateConfigCaches_();
   return groupedReferences_();
 }

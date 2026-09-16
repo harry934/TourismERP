@@ -40,6 +40,8 @@ Resolution: `resolveRoleId_(session)` in [`src/PermissionService.gs`](../src/Per
 | archive | yes | limited | limited | limited | limited |
 | settings | yes | no | no | no | no |
 
+Department-period reports (Daily/Weekly/Monthly), department lock, and CSV export: see [`REPORTS.md`](REPORTS.md).
+
 ## Field groups
 
 Values: `full` | `read` | `summary` | `none`

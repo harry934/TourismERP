@@ -36,6 +36,7 @@ var METHOD_HANDLERS_ = {
   markPaymentPaid: markPaymentPaid,
   updatePayment: updatePayment,
   getReportData: getReportData,
+  generateDepartmentReport: generateDepartmentReport,
   getAdminData: getAdminData,
   createUser: createUser,
   updateUser: updateUser,
@@ -59,6 +60,7 @@ function doGet() {
 }
 
 function api(request) {
+  clearRequestCaches_();
   try {
     var input = request && typeof request === 'object' ? request : {};
     var method = requireString_(input.method, 'Method', { maxLength: 80 });

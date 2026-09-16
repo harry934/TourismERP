@@ -56,8 +56,23 @@ function countDueFollowUps_() {
   return count;
 }
 
+function getDueCountCached_() {
+  var cached = cacheGetJson_('cfg:dueCount');
+  if (cached && typeof cached.count === 'number') return cached.count;
+  var count = countDueFollowUps_();
+  cachePutJson_('cfg:dueCount', { count: count }, 120);
+  return count;
+}
+
+function bumpDueCountCache_() {
+  cacheRemove_('cfg:dueCount');
+}
+
 function getBootstrap(payload, session) {
-  ensureHarryWorkspace_();
+  var forceSchema = !!(payload && payload.forceSchema);
+  if (forceSchema || !cacheGetJson_('cfg:schemaOk')) {
+    ensureHarryWorkspace_();
+  }
   if (needsSetup_()) {
     return { needsSetup: true, session: null };
   }
@@ -75,7 +90,7 @@ function getBootstrap(payload, session) {
     staff: staff,
     settings: readSettingsMap_(),
     references: groupedReferences_(),
-    dueCount: countDueFollowUps_(),
+    dueCount: getDueCountCached_(),
     today: todayIso_()
   };
 }
@@ -84,6 +99,7 @@ function setupSuperAdmin(payload) {
   return withLock_(function () {
     if (!needsSetup_()) fail_('ALREADY_SETUP', 'The workspace already has a Super Admin.');
     initializeWorkspace_();
+    cachePutJson_('cfg:schemaOk', { ok: true }, 600);
     var displayName = requireString_(payload.displayName, 'Name', { maxLength: 80 });
     var username = requireString_(payload.username, 'Username', { maxLength: 40 }).toLowerCase();
     var password = String(payload.password || '');
