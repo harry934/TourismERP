@@ -1,7 +1,7 @@
 # Lamai Africa Safaris — Internal Operations Workspace
 
 **Product requirements document (v1)**  
-**Status:** Requirements only. No app, UI, or backend work until a new admin dashboard template is supplied.  
+**Status:** Implemented on Google Sheets + Apps Script + Vite UI (not Excel/VBA).  
 **Company site:** [lamaisafaris.com](https://lamaisafaris.com/)
 
 ---
@@ -97,7 +97,7 @@ Two **permission** roles only in v1:
 | **Staff**       | The rest of the ~5-person team                           | Sign in, work enquiries, clients, follow-ups, and the pipeline. They can see payment status on a trip they work, but they do not manage users, settings, or reports |
 
 
-**Work labels** (not extra permission locks in v1): Sales, Reservations, Operations, Guide. A staff member can have a label so the team knows who does what. Labels do not hide screens unless a later PRD says so.
+**Work labels** (not extra permission locks in v1): Sales, Reservations, Accounts, Operations, Guide. A staff member can have a label so the team knows who does what. Labels do not hide screens unless a later PRD says so.
 
 v1 sign-in is a simple staff username + password issued by Super Admin. No guest login, no Clerk, no Google/social login, no public self-registration.
 
@@ -117,6 +117,7 @@ When Super Admin adds staff, the workspace issues a username and a one-time pass
 | Enquiries / trip files | Open a file from an inbound contact, attach it to a client, capture what they asked for, keep the tailored itinerary notes as the trip evolves |
 | Pipeline               | Move a file through stages without losing owner or next action                                                                                 |
 | Follow-ups             | See what is due today / overdue; log a call, WhatsApp, or email; set the next follow-up                                                        |
+| Ownership / handovers  | See current department and owner; record handovers when a file moves between Sales, Reservations, Accounts, and Operations                     |
 | Payment milestones     | On a booked trip, see deposit (50%) and balance (due 90 days before departure); Super Admin marks received                                     |
 | Simple reports         | Super Admin: counts by stage, overdue follow-ups, outstanding deposits/balances                                                                |
 | Admin settings         | Super Admin: staff list, company profile, destination/style reference lists                                                                    |
@@ -156,25 +157,27 @@ This is the real Lamai loop the screens must support.
 5. **Book.** Guest accepts. Super Admin records the 50% deposit. File becomes a confirmed trip. Balance due date is **departure minus 90 days**.
 6. **Operate.** Closer to travel: remaining balance, guest details, guide assignment, lodge confirmations as notes. After travel, mark complete. Lost/declined files are archived, not deleted.
 
-Default pipeline stages:
+Default pipeline stages (aligned to the Tourism Operations Management System master prompt):
 
 
-| Stage       | Meaning                                                   |
-| ----------- | --------------------------------------------------------- |
-| New         | Inbound, not yet qualified                                |
-| Qualifying  | Gathering dates, pax, style, budget                       |
-| Designing   | Building the tailored itinerary                           |
-| Quoted      | Proposal sent; waiting on guest                           |
-| Option held | Informal hold / “thinking about it” with a follow-up date |
-| Deposit due | Guest accepted; 50% not yet marked received               |
-| Confirmed   | Deposit received; trip is on the books                    |
-| Balance due | Inside the 90-day window and balance still outstanding    |
-| Travelling  | Trip in progress                                          |
-| Completed   | Guest has travelled                                       |
-| Lost        | Declined, went silent, or cancelled                       |
+| Stage | Department | Meaning |
+| --- | --- | --- |
+| New enquiry | Sales | Inbound, not yet quoted |
+| Quoting | Sales | Preparing quotation / itinerary |
+| Follow-up | Sales | Waiting on guest response |
+| Accepted | Sales | Guest accepted the offer |
+| Confirmed booking | Reservations | Booking confirmed; suppliers next |
+| Reservations in progress | Reservations | Hotels / flights / transport being booked |
+| Supplier booking completed | Reservations | Supplier confirmations recorded |
+| Awaiting payment | Accounts | Deposit / balance outstanding |
+| Paid | Accounts | Payment milestones received |
+| Operations in progress | Operations | Trip delivery oversight |
+| Travel completed | Operations | Guest has travelled |
+| Closed | — | Closed with reason |
+| Archived | — | Archived; remains searchable |
 
 
-A file can skip stages (e.g. a returning guest who already knows the itinerary). Staff must still set an **owner** and a **next follow-up** whenever the file is not Completed or Lost.
+Department is set from stage. Changing department records a **handover**. Staff must still set an **owner** and a **next follow-up** whenever the file is live.
 
 ---
 
@@ -287,19 +290,11 @@ It is **not** success to rebuild the old app, to clone a public booking site, or
 
 
 
-## 12. Open decisions (blocked on the new template)
+## 12. Implementation note
 
-Do **not** implement an app yet.
+The workspace runs as a Google Apps Script web app with one Google Sheet as the database and a Vite/Bootstrap SPA built into `src/Index.html`. See [SYSTEM.md](SYSTEM.md) for screens, APIs, and sheet columns.
 
-The previous implementation (Apps Script web app + Google Sheet + shadcn-admin React SPA) is retired. Stack and UI are **open** until you provide a new **admin dashboard template**.
-
-Next phase (separate plan) will:
-
-1. Map these screens onto that template
-2. Choose the backend (Apps Script again vs something else)
-3. Only then build
-
-Until that template arrives, this folder should contain this PRD and nothing else to build.
+Pipeline stages follow the Tourism Operations Management System master prompt (department-oriented). Lamai payment rules (50% deposit, balance 90 days before departure) remain.
 
 ---
 
@@ -314,7 +309,8 @@ Until that template arrives, this folder should contain this PRD and nothing els
 | Owner               | The staff member responsible for the next action                      |
 | Pipeline            | Shared stages from New → Completed / Lost                             |
 | Milestone           | Deposit or balance row, not a full invoice                            |
-| Work label          | Sales / Reservations / Operations / Guide — a badge, not a permission |
+| Work label          | Sales / Reservations / Accounts / Operations / Guide — a badge, not a permission |
 | Super Admin         | The only role that manages staff, settings, payments, and reports     |
+| Handover            | Recorded move of a file from one department to another                |
 
 

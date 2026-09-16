@@ -5,24 +5,45 @@ import logoUrl from './logo.js';
 import { mapClientCsv, SAMPLE_CLIENT_CSV } from './csv.js';
 
 const STAGES = [
-  'New',
-  'Qualifying',
-  'Designing',
-  'Quoted',
-  'Option held',
-  'Deposit due',
-  'Confirmed',
-  'Balance due',
-  'Travelling',
-  'Completed',
-  'Lost'
+  'New enquiry',
+  'Quoting',
+  'Follow-up',
+  'Accepted',
+  'Confirmed booking',
+  'Reservations in progress',
+  'Supplier booking completed',
+  'Awaiting payment',
+  'Paid',
+  'Operations in progress',
+  'Travel completed',
+  'Closed',
+  'Archived'
 ];
-const LIVE_STAGES = STAGES.filter((stage) => stage !== 'Completed' && stage !== 'Lost');
+const LIVE_STAGES = STAGES.filter((stage) => stage !== 'Closed' && stage !== 'Archived');
+const DEPARTMENTS = ['Sales', 'Reservations', 'Accounts', 'Operations'];
+const FILE_STATUSES = ['Pending', 'Delayed', 'Confirmed', 'Paid', 'Completed'];
+const PRIORITIES = ['Low', 'Normal', 'High', 'Urgent'];
+const STAGE_DEPARTMENT = {
+  'New enquiry': 'Sales',
+  Quoting: 'Sales',
+  'Follow-up': 'Sales',
+  Accepted: 'Sales',
+  'Confirmed booking': 'Reservations',
+  'Reservations in progress': 'Reservations',
+  'Supplier booking completed': 'Reservations',
+  'Awaiting payment': 'Accounts',
+  Paid: 'Accounts',
+  'Operations in progress': 'Operations',
+  'Travel completed': 'Operations',
+  Closed: '',
+  Archived: ''
+};
 const PARTY_TYPES = ['solo', 'couple', 'family', 'friends', 'group'];
 const CHANNELS = ['email', 'phone', 'web', 'WhatsApp', 'other'];
 const LODGE_BANDS = ['bush camp', 'mid', 'luxury', 'mix'];
-const WORK_LABELS = ['Sales', 'Reservations', 'Operations', 'Guide'];
+const WORK_LABELS = ['Sales', 'Reservations', 'Accounts', 'Operations', 'Guide'];
 const ACTIVITY_TYPES = ['call', 'WhatsApp', 'email', 'note', 'follow-up'];
+const TERMINAL_STAGES = ['Closed', 'Archived'];
 const USERNAME_KEY = 'lamai.username';
 const SEEN_KEY = 'lamai.notifSeen';
 
@@ -57,7 +78,52 @@ function initials(name) {
 }
 
 function isAdmin() {
-  return state.session && state.session.role === 'Super Admin';
+  return state.session && (state.session.role === 'Super Admin' || state.session.roleId === 'ADMIN');
+}
+
+function permissions() {
+  return (state.bootstrap && state.bootstrap.permissions) || {
+    roleId: isAdmin() ? 'ADMIN' : 'SALES',
+    modules: {},
+    actions: {},
+    fields: {},
+    stages: LIVE_STAGES
+  };
+}
+
+function canModule(name) {
+  const mods = permissions().modules || {};
+  if (Object.keys(mods).length === 0) return isAdmin() || name !== 'settings';
+  return !!mods[name];
+}
+
+function canAction(name) {
+  const actions = permissions().actions || {};
+  if (Object.keys(actions).length === 0) return isAdmin();
+  return !!actions[name];
+}
+
+function roleStages() {
+  const stages = permissions().stages;
+  if (stages && stages.length) return stages.filter((stage) => stage !== 'Closed' && stage !== 'Archived');
+  return LIVE_STAGES;
+}
+
+function fieldAccess(group) {
+  return (permissions().fields && permissions().fields[group]) || 'read';
+}
+
+function denyPage(message) {
+  document.getElementById('page').innerHTML = `<div class="alert alert-warning">${escapeHtml(message || 'You do not have access to this area.')}</div>`;
+  return false;
+}
+
+function requireModule(name, message) {
+  if (!canModule(name)) {
+    denyPage(message || 'You do not have access to this area.');
+    return false;
+  }
+  return true;
 }
 
 function showAlert(message, type) {
@@ -325,8 +391,9 @@ function setChrome(visible) {
     const node = document.getElementById(id);
     if (node) node.classList.toggle('d-none', !visible);
   });
-  document.querySelectorAll('.admin-only').forEach((node) => {
-    node.classList.toggle('d-none', !isAdmin());
+  document.querySelectorAll('[data-module]').forEach((node) => {
+    const moduleName = node.getAttribute('data-module');
+    node.classList.toggle('d-none', !canModule(moduleName));
   });
   if (state.session) {
     const initialsEl = document.getElementById('user-initials');
@@ -334,7 +401,8 @@ function setChrome(visible) {
     const metaEl = document.getElementById('user-meta');
     if (initialsEl) initialsEl.textContent = initials(state.session.displayName);
     if (nameEl) nameEl.textContent = state.session.displayName || state.session.username;
-    if (metaEl) metaEl.textContent = [state.session.role, state.session.workLabel].filter(Boolean).join(' · ');
+    const roleLabel = state.session.roleId || state.session.workLabel || state.session.role;
+    if (metaEl) metaEl.textContent = [roleLabel, state.session.department || state.session.workLabel].filter(Boolean).join(' · ');
   }
   const due = state.bootstrap && state.bootstrap.dueCount ? Number(state.bootstrap.dueCount) : 0;
   if (visible && state.session) {
@@ -356,6 +424,8 @@ function markNav(path) {
     ['#/enquiries', path.indexOf('/enquiries') === 0],
     ['#/clients', path.indexOf('/clients') === 0],
     ['#/work', path === '/work'],
+    ['#/handovers', path === '/handovers'],
+    ['#/archive', path === '/archive'],
     ['#/payments', path === '/payments'],
     ['#/reports', path === '/reports'],
     ['#/settings', path === '/settings']
@@ -526,6 +596,7 @@ function enquiryRow(item) {
   return `<tr data-href="#/enquiries/${escapeHtml(item.enquiryId)}">
     <td>${escapeHtml(item.clientName || item.enquiryId)}</td>
     <td><span class="badge text-bg-light stage-chip">${escapeHtml(item.stage)}</span></td>
+    <td>${escapeHtml(item.department || STAGE_DEPARTMENT[item.stage] || '—')}</td>
     <td>${escapeHtml(item.ownerName || 'Unassigned')}</td>
     <td>${escapeHtml(formatDate(item.startDate))}</td>
     <td>${escapeHtml(formatDate(item.nextFollowUpAt))}</td>
@@ -533,42 +604,97 @@ function enquiryRow(item) {
 }
 
 async function renderToday() {
+  if (!requireModule('dashboard')) return;
   const data = await api('getDashboardData');
+  const widgets = data.widgets || {};
+  const roleId = data.roleId || permissions().roleId || '';
+  const cards = [];
+  cards.push(statCard('ti-files', widgets.companyFiles ? 'Live files' : 'My files', widgets.companyFiles ? (data.liveCount || 0) : (data.myFilesCount || 0), 'primary'));
+  cards.push(statCard('ti-calendar-due', 'Due today', (data.dueToday || []).length, 'warning'));
+  cards.push(statCard('ti-alert-circle', 'Overdue', (data.overdue || []).length, 'danger'));
+  if (widgets.handovers) cards.push(statCard('ti-transfer', 'Pending handovers', data.pendingHandoverCount || 0, 'info'));
+  if (widgets.salesPipeline) {
+    cards.push(statCard('ti-mail', 'New enquiries', data.salesNew || 0, 'primary'));
+    cards.push(statCard('ti-file-text', 'Quoting', data.salesQuoting || 0, 'primary'));
+    cards.push(statCard('ti-phone', 'Follow-up', data.salesFollowUp || 0, 'warning'));
+    cards.push(statCard('ti-check', 'Accepted', data.salesAccepted || 0, 'success'));
+  }
+  if (widgets.reservations) {
+    cards.push(statCard('ti-building', 'Reservations in progress', data.resInProgress || 0, 'primary'));
+    cards.push(statCard('ti-file-check', 'Supplier completed', data.resSupplierDone || 0, 'success'));
+    cards.push(statCard('ti-alert-triangle', 'Missing booking ref', data.missingBookingRef || 0, 'danger'));
+  }
+  if (widgets.accounts) {
+    cards.push(statCard('ti-cash', 'Awaiting payment', data.awaitingPayment || 0, 'warning'));
+    cards.push(statCard('ti-coin', 'Paid', data.paidCount || 0, 'success'));
+    cards.push(statCard('ti-cash', 'Payments due', (data.paymentsDue || []).length, 'danger'));
+  }
+  if (widgets.operations) {
+    cards.push(statCard('ti-plane', 'Ops in progress', data.opsInProgress || 0, 'primary'));
+    cards.push(statCard('ti-calendar-event', 'Upcoming travel', data.upcomingTravel || 0, 'info'));
+    cards.push(statCard('ti-flag', 'Completed trips', data.completedTrips || 0, 'success'));
+  }
+  if (widgets.revenue) cards.push(statCard('ti-cash', 'Est. revenue', (data.estimatedRevenue || 0).toLocaleString(), 'warning'));
+  if (widgets.companyFiles) {
+    (data.byDepartment || []).forEach((row) => {
+      cards.push(statCard('ti-building', row.department, row.count || 0, 'primary'));
+    });
+  }
+
+  const openFiles = widgets.companyFiles ? (data.live || []) : (data.myFiles || data.live || []);
   document.getElementById('page').innerHTML = `
     <div class="mb-6">
       <h1 class="fs-3 mb-1">Today</h1>
-      <p class="text-secondary">Live files, follow-ups, and money still outstanding.</p>
+      <p class="text-secondary">${escapeHtml(roleId || 'Staff')} dashboard — what you own, what is waiting, and what is overdue.</p>
     </div>
     <div class="row g-3 mb-4">
-      ${statCard('ti-files', 'Live files', data.liveCount || 0, 'primary')}
-      ${statCard('ti-calendar-due', 'Due today', (data.dueToday || []).length, 'warning')}
-      ${statCard('ti-alert-circle', 'Overdue', (data.overdue || []).length, 'danger')}
-      ${statCard('ti-cash', 'Payments due', (data.paymentsDue || []).length, 'success')}
+      ${cards.join('')}
     </div>
     <div class="row g-3">
-      <div class="col-lg-6">
+      <div class="col-lg-4">
         <div class="card"><div class="card-body">
           <div class="d-flex justify-content-between mb-3"><h2 class="h6 mb-0">Follow-ups due today</h2><a href="#/work">Open work</a></div>
           ${listOrEmpty(data.dueToday, (item) => `<div class="border-bottom py-2"><a href="#/enquiries/${escapeHtml(item.enquiryId)}">${escapeHtml(item.clientName || item.summary)}</a><div class="small text-secondary">${escapeHtml(item.summary || item.nextAction || '')}</div></div>`) || ''}
         </div></div>
       </div>
-      <div class="col-lg-6">
+      <div class="col-lg-4">
         <div class="card"><div class="card-body">
           <div class="d-flex justify-content-between mb-3"><h2 class="h6 mb-0">Overdue</h2></div>
           ${listOrEmpty(data.overdue, (item) => `<div class="border-bottom py-2"><a href="#/enquiries/${escapeHtml(item.enquiryId)}">${escapeHtml(item.clientName || item.summary)}</a><div class="small text-secondary">${escapeHtml(formatDate(item.nextFollowUpAt || item.dueAt))}</div></div>`)}
         </div></div>
       </div>
+      <div class="col-lg-4">
+        <div class="card"><div class="card-body">
+          <div class="d-flex justify-content-between mb-3"><h2 class="h6 mb-0">Pending handovers</h2><a href="#/handovers">All handovers</a></div>
+          ${listOrEmpty(data.pendingHandovers, (item) => `<div class="border-bottom py-2"><a href="#/enquiries/${escapeHtml(item.enquiryId)}">${escapeHtml(item.clientName || item.enquiryId)}</a><div class="small text-secondary">${escapeHtml(item.fromDepartment || '—')} → ${escapeHtml(item.toDepartment)} · ${escapeHtml(item.ackStatus || 'Pending')}</div>
+            ${item.ackStatus !== 'Acknowledged' ? `<button class="btn btn-sm btn-light mt-1 ack-handover" data-id="${escapeHtml(item.handoverId)}" type="button">Acknowledge</button>` : ''}
+          </div>`)}
+        </div></div>
+      </div>
     </div>
     <div class="card mt-3"><div class="card-body">
-      <div class="d-flex justify-content-between mb-3"><h2 class="h6 mb-0">Open files</h2><a href="#/enquiries/new" class="btn btn-primary btn-sm">New enquiry</a></div>
-      ${(data.live || []).length
+      <div class="d-flex justify-content-between mb-3"><h2 class="h6 mb-0">${widgets.companyFiles ? 'Open files' : 'My files'}</h2>${canAction('createEnquiry') ? '<a href="#/enquiries/new" class="btn btn-primary btn-sm">New enquiry</a>' : ''}</div>
+      ${openFiles.length
         ? `<div class="table-responsive"><table class="table table-clickable align-middle">
-        <thead><tr><th>Guest</th><th>Stage</th><th>Owner</th><th>Travel</th><th>Next follow-up</th></tr></thead>
-        <tbody>${data.live.map(enquiryRow).join('')}</tbody>
+        <thead><tr><th>Guest</th><th>Stage</th><th>Dept</th><th>Owner</th><th>Travel</th><th>Next follow-up</th></tr></thead>
+        <tbody>${openFiles.map(enquiryRow).join('')}</tbody>
       </table></div>`
-        : emptyState('No live files yet', 'Add the guest, then file the enquiry.', '#/enquiries/new', 'New enquiry')}
+        : emptyState('No files yet', 'Add the guest, then file the enquiry.', canAction('createEnquiry') ? '#/enquiries/new' : '', canAction('createEnquiry') ? 'New enquiry' : '')}
     </div></div>`;
   bindTableLinks();
+  document.querySelectorAll('.ack-handover').forEach((button) => {
+    button.addEventListener('click', async () => {
+      setBusy(button, true, 'Saving…');
+      try {
+        await api('acknowledgeHandover', { handoverId: button.getAttribute('data-id') });
+        notify('Handover acknowledged.', 'success');
+        await renderToday();
+      } catch (error) {
+        setBusy(button, false);
+        notify(error.message, 'danger');
+      }
+    });
+  });
 }
 
 function listOrEmpty(items, renderItem) {
@@ -583,50 +709,71 @@ function bindTableLinks() {
 }
 
 async function renderPipeline() {
+  if (!requireModule('pipeline')) return;
   const data = await api('listEnquiries', { liveOnly: true });
+  const stages = roleStages();
   const groups = {};
-  LIVE_STAGES.forEach((stage) => { groups[stage] = []; });
+  stages.forEach((stage) => { groups[stage] = []; });
   (data.items || []).forEach((item) => {
     if (!groups[item.stage]) groups[item.stage] = [];
     groups[item.stage].push(item);
   });
   document.getElementById('page').innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-      <div><h1 class="fs-3 mb-1">Pipeline</h1><p class="text-secondary mb-0">Live files grouped by stage.</p></div>
-      <a class="btn btn-primary" href="#/enquiries/new">New enquiry</a>
+      <div><h1 class="fs-3 mb-1">Pipeline</h1><p class="text-secondary mb-0">Files in your department stages.</p></div>
+      ${canAction('createEnquiry') ? '<a class="btn btn-primary" href="#/enquiries/new">New enquiry</a>' : ''}
     </div>
-    ${LIVE_STAGES.map((stage) => {
+    ${stages.map((stage) => {
       const rows = groups[stage] || [];
+      const dept = STAGE_DEPARTMENT[stage] || '';
       return `
         <section class="pipeline-group">
-          <h2>${escapeHtml(stage)} <span>(${rows.length})</span></h2>
+          <h2>${escapeHtml(stage)} <span>(${rows.length})</span>${dept ? ` <span class="badge text-bg-light">${escapeHtml(dept)}</span>` : ''}</h2>
           ${rows.length
-            ? rows.map((item) => `<a class="pipeline-file" href="#/enquiries/${escapeHtml(item.enquiryId)}">${escapeHtml(item.clientName || item.enquiryId)}<div class="small text-secondary">${escapeHtml(item.ownerName || 'Unassigned')} · ${escapeHtml(formatDate(item.nextFollowUpAt))}</div></a>`).join('')
+            ? rows.map((item) => `<a class="pipeline-file" href="#/enquiries/${escapeHtml(item.enquiryId)}">${escapeHtml(item.clientName || item.enquiryId)}<div class="small text-secondary">${escapeHtml(item.department || dept || '—')} · ${escapeHtml(item.ownerName || 'Unassigned')} · ${escapeHtml(formatDate(item.nextFollowUpAt))}</div></a>`).join('')
             : '<p class="text-secondary small mb-0">None</p>'}
         </section>`;
     }).join('')}`;
 }
 
 async function renderEnquiryList() {
+  if (!requireModule('enquiries')) return;
   const data = await api('listEnquiries', {});
   document.getElementById('page').innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-4">
-      <div><h1 class="fs-3 mb-1">Enquiries</h1><p class="text-secondary mb-0">Trip files from first message to travel.</p></div>
-      <a class="btn btn-primary" href="#/enquiries/new">New enquiry</a>
+      <div><h1 class="fs-3 mb-1">Enquiries</h1><p class="text-secondary mb-0">Trip files in your scope.</p></div>
+      ${canAction('createEnquiry') ? '<a class="btn btn-primary" href="#/enquiries/new">New enquiry</a>' : ''}
     </div>
     ${(data.items || []).length
       ? `<div class="card"><div class="card-body">
       <div class="table-responsive"><table class="table table-clickable align-middle">
-        <thead><tr><th>Guest</th><th>Stage</th><th>Owner</th><th>Travel</th><th>Next follow-up</th></tr></thead>
+        <thead><tr><th>Guest</th><th>Stage</th><th>Dept</th><th>Owner</th><th>Travel</th><th>Next follow-up</th></tr></thead>
         <tbody>${data.items.map(enquiryRow).join('')}</tbody>
       </table></div>
     </div></div>`
-      : `<div class="card"><div class="card-body">${emptyState('No enquiries yet', 'Add the guest, then file the enquiry from WhatsApp, email, or the website form.', '#/enquiries/new', 'New enquiry')}</div></div>`}`;
+      : `<div class="card"><div class="card-body">${emptyState('No enquiries yet', 'Add the guest, then file the enquiry from WhatsApp, email, or the website form.', canAction('createEnquiry') ? '#/enquiries/new' : '', canAction('createEnquiry') ? 'New enquiry' : '')}</div></div>`}`;
   bindTableLinks();
 }
 
 function enquiryForm(record, clients) {
   const item = record || {};
+  const stage = item.stage || 'New enquiry';
+  const dept = item.department || STAGE_DEPARTMENT[stage] || '';
+  const terminal = TERMINAL_STAGES.indexOf(stage) !== -1;
+  const canEdit = item._canEdit || {
+    sales: canAction('editSalesFields') || canAction('createEnquiry'),
+    supplier: canAction('editSupplierFields'),
+    finance: canAction('editFinanceFields'),
+    operations: canAction('editOperationsFields'),
+    ownership: isAdmin()
+  };
+  const access = item._access || permissions().fields || {};
+  const salesRo = canEdit.sales ? '' : 'readonly disabled';
+  const supplierRo = canEdit.supplier ? '' : 'readonly disabled';
+  const opsRo = canEdit.operations ? '' : 'readonly disabled';
+  const ownerRo = (canEdit.ownership || isAdmin()) ? '' : 'disabled';
+  const budgetHidden = access.budgetAmount === 'none' || access.budgetAmount === 'summary';
+  const stageOptions = isAdmin() ? STAGES : [...new Set([...(permissions().stages || []), stage, 'Closed'].filter(Boolean))];
   return `
     <form id="enquiry-form" class="card"><div class="card-body p-4">
       <div class="form-section">
@@ -634,28 +781,44 @@ function enquiryForm(record, clients) {
         <div class="row g-3">
           <div class="col-md-6">
             <label class="form-label">Client</label>
-            <select class="form-select" name="clientId" id="enquiry-client" required>
+            <select class="form-select" name="clientId" id="enquiry-client" required ${salesRo}>
               <option value="">Select client</option>
               ${optionList((clients || []).map((client) => ({ value: client.clientId, label: client.fullName })), item.clientId)}
             </select>
-            <button class="btn btn-link btn-sm px-0" id="toggle-new-guest" type="button">New guest on this page</button>
+            ${canEdit.sales ? `<button class="btn btn-link btn-sm px-0" id="toggle-new-guest" type="button">New guest on this page</button>
             <div id="new-guest-wrap" class="border rounded-2 p-3 mt-2 d-none bg-white">
               <div class="mb-2"><label class="form-label">Full name</label><input class="form-control" id="quick-guest-name"></div>
               ${phoneField('quick', { phoneCountry: '255' })}
               <button class="btn btn-light btn-sm mt-2" id="save-quick-guest" type="button">Save guest</button>
-            </div>
+            </div>` : ''}
           </div>
           <div class="col-md-3">
             <label class="form-label">Owner</label>
-            <select class="form-select" name="ownerId">${staffOptions(item.ownerId)}</select>
+            <select class="form-select" name="ownerId" ${ownerRo}>${staffOptions(item.ownerId)}</select>
           </div>
           <div class="col-md-3">
             <label class="form-label">Stage</label>
-            <select class="form-select" name="stage">${optionList(STAGES, item.stage || 'New')}</select>
+            <select class="form-select" name="stage">${optionList(stageOptions, stage)}</select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Department</label>
+            <input class="form-control" name="departmentDisplay" value="${escapeHtml(dept)}" readonly>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Priority</label>
+            <select class="form-select" name="priority" ${ownerRo}>${optionList(PRIORITIES, item.priority || 'Normal')}</select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Status</label>
+            <select class="form-select" name="status">${optionList(FILE_STATUSES, item.status || 'Pending')}</select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Booking ref</label>
+            <input class="form-control" name="bookingRef" value="${escapeHtml(item.bookingRef || '')}" ${supplierRo}>
           </div>
           <div class="col-md-4">
             <label class="form-label">Source</label>
-            <select class="form-select" name="sourceChannel">${optionList(CHANNELS, item.sourceChannel || 'WhatsApp')}</select>
+            <select class="form-select" name="sourceChannel" ${salesRo}>${optionList(CHANNELS, item.sourceChannel || 'WhatsApp')}</select>
           </div>
         </div>
       </div>
@@ -664,19 +827,22 @@ function enquiryForm(record, clients) {
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label">Travel style</label>
-            <select class="form-select" name="travelStyle">${styleOptions(item.travelStyle)}</select>
+            <select class="form-select" name="travelStyle" ${salesRo}>${styleOptions(item.travelStyle)}</select>
           </div>
           <div class="col-md-4">
             <label class="form-label">Lodge band</label>
-            <select class="form-select" name="lodgeBand">${optionList(LODGE_BANDS, item.lodgeBand)}</select>
+            <select class="form-select" name="lodgeBand" ${salesRo}>${optionList(LODGE_BANDS, item.lodgeBand)}</select>
           </div>
           <div class="col-12">
             <label class="form-label d-block">Destinations</label>
             <div class="d-flex flex-wrap">${destinationOptions(item.destinations || [])}</div>
           </div>
-          <div class="col-12"><label class="form-label">Itinerary outline</label><textarea class="form-control" name="itineraryOutline" rows="3">${escapeHtml(item.itineraryOutline || '')}</textarea></div>
-          <div class="col-md-6"><label class="form-label">Activity notes</label><textarea class="form-control" name="activityNotes" rows="2">${escapeHtml(item.activityNotes || '')}</textarea></div>
-          <div class="col-md-6"><label class="form-label">Special requests</label><textarea class="form-control" name="specialRequests" rows="2">${escapeHtml(item.specialRequests || '')}</textarea></div>
+          <div class="col-12"><label class="form-label">Itinerary outline</label><textarea class="form-control" name="itineraryOutline" rows="3" ${salesRo}>${escapeHtml(item.itineraryOutline || '')}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Activity notes</label><textarea class="form-control" name="activityNotes" rows="2" ${salesRo}>${escapeHtml(item.activityNotes || '')}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Special requests</label><textarea class="form-control" name="specialRequests" rows="2" ${salesRo}>${escapeHtml(item.specialRequests || '')}</textarea></div>
+          <div class="col-12"><label class="form-label">Supplier notes</label><textarea class="form-control" name="supplierNotes" rows="2" ${supplierRo}>${escapeHtml(item.supplierNotes || '')}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Operations issues</label><textarea class="form-control" name="operationsIssue" rows="2" ${opsRo}>${escapeHtml(item.operationsIssue || '')}</textarea></div>
+          <div class="col-md-6"><label class="form-label">Trip completion</label><input class="form-control" name="tripCompletionStatus" value="${escapeHtml(item.tripCompletionStatus || '')}" ${opsRo}></div>
         </div>
       </div>
       <div class="form-section">
@@ -684,25 +850,25 @@ function enquiryForm(record, clients) {
         <div class="row g-3">
           <div class="col-md-3">
             <label class="form-label">Travel start</label>
-            <input class="form-control" type="date" name="startDate" value="${escapeHtml(formatDate(item.startDate).replace('—', ''))}">
+            <input class="form-control" type="date" name="startDate" value="${escapeHtml(formatDate(item.startDate).replace('—', ''))}" ${(canEdit.sales || canEdit.supplier || canEdit.operations) ? '' : 'readonly'}>
           </div>
           <div class="col-md-3">
             <label class="form-label">Travel end</label>
-            <input class="form-control" type="date" name="endDate" value="${escapeHtml(formatDate(item.endDate).replace('—', ''))}">
+            <input class="form-control" type="date" name="endDate" value="${escapeHtml(formatDate(item.endDate).replace('—', ''))}" ${(canEdit.sales || canEdit.supplier || canEdit.operations) ? '' : 'readonly'}>
           </div>
           <div class="col-md-3">
             <label class="form-label">Flexible month</label>
-            <input class="form-control" name="flexibleMonth" placeholder="June 2027" value="${escapeHtml(item.flexibleMonth || '')}">
+            <input class="form-control" name="flexibleMonth" placeholder="June 2027" value="${escapeHtml(item.flexibleMonth || '')}" ${salesRo}>
           </div>
           <div class="col-md-3 d-flex align-items-end">
             <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" name="flexible" ${item.flexible ? 'checked' : ''}>
+              <input class="form-check-input" type="checkbox" name="flexible" ${item.flexible ? 'checked' : ''} ${salesRo ? 'disabled' : ''}>
               <label class="form-check-label">Dates flexible</label>
             </div>
           </div>
-          <div class="col-md-2"><label class="form-label">Adults</label><input class="form-control" type="number" min="1" name="adults" value="${escapeHtml(item.adults || 1)}"></div>
-          <div class="col-md-2"><label class="form-label">Children</label><input class="form-control" type="number" min="0" name="children" value="${escapeHtml(item.children || 0)}"></div>
-          <div class="col-md-4"><label class="form-label">Child ages</label><input class="form-control" name="childAges" value="${escapeHtml(item.childAges || '')}"></div>
+          <div class="col-md-2"><label class="form-label">Adults</label><input class="form-control" type="number" min="1" name="adults" value="${escapeHtml(item.adults || 1)}" ${(canEdit.sales || canEdit.supplier) ? '' : 'readonly'}></div>
+          <div class="col-md-2"><label class="form-label">Children</label><input class="form-control" type="number" min="0" name="children" value="${escapeHtml(item.children || 0)}" ${(canEdit.sales || canEdit.supplier) ? '' : 'readonly'}></div>
+          <div class="col-md-4"><label class="form-label">Child ages</label><input class="form-control" name="childAges" value="${escapeHtml(item.childAges || '')}" ${salesRo}></div>
         </div>
       </div>
       <div class="form-section">
@@ -710,12 +876,16 @@ function enquiryForm(record, clients) {
         <div class="row g-3">
           <div class="col-md-3">
             <label class="form-label">Budget type</label>
-            <select class="form-select" name="budgetType">${optionList(['unknown', 'band', 'quoted'], item.budgetType || 'unknown')}</select>
+            <select class="form-select" name="budgetType" ${salesRo}>${optionList(['unknown', 'band', 'quoted'], item.budgetType || 'unknown')}</select>
           </div>
-          <div class="col-md-3"><label class="form-label">Amount</label><input class="form-control" type="number" step="0.01" name="budgetAmount" value="${escapeHtml(item.budgetAmount || '')}"></div>
+          <div class="col-md-3"><label class="form-label">Amount</label>
+            ${budgetHidden
+              ? `<input class="form-control" value="${access.budgetAmount === 'summary' && item.budgetAmountSummary ? 'Set' : '—'}" readonly>`
+              : `<input class="form-control" type="number" step="0.01" name="budgetAmount" value="${escapeHtml(item.budgetAmount || '')}" ${salesRo}>`}
+          </div>
           <div class="col-md-3">
             <label class="form-label">Currency</label>
-            <select class="form-select" name="currency">${optionList(['USD', 'TZS'], item.currency || 'USD')}</select>
+            <select class="form-select" name="currency" ${salesRo}>${optionList(['USD', 'TZS'], item.currency || 'USD')}</select>
           </div>
         </div>
       </div>
@@ -724,9 +894,9 @@ function enquiryForm(record, clients) {
         <div class="row g-3">
           <div class="col-md-4"><label class="form-label">Follow-up date</label><input class="form-control" type="date" name="nextFollowUpAt" value="${escapeHtml(formatDate(item.nextFollowUpAt).replace('—', ''))}"></div>
           <div class="col-md-8"><label class="form-label">Next action</label><input class="form-control" name="nextAction" value="${escapeHtml(item.nextAction || '')}"></div>
-          <div class="col-12" id="lost-wrap" style="${item.stage === 'Lost' ? '' : 'display:none'}">
-            <label class="form-label">Lost / cancelled reason</label>
-            <input class="form-control" name="lostReason" value="${escapeHtml(item.lostReason || '')}">
+          <div class="col-12" id="lost-wrap" style="${terminal ? '' : 'display:none'}">
+            <label class="form-label">Close / archive reason</label>
+            <input class="form-control" name="lostReason" value="${escapeHtml(item.lostReason || '')}" placeholder="Why this file is closed or archived">
           </div>
         </div>
       </div>
@@ -759,35 +929,40 @@ async function renderEnquiryDetail(enquiryId) {
   const detail = await api('getEnquiryDetail', { enquiryId: enquiryId });
   const clients = await api('listClients', {});
   const payments = detail.payments || [];
+  const handovers = detail.handovers || [];
   const enquiry = detail.enquiry || {};
+  const dept = enquiry.department || STAGE_DEPARTMENT[enquiry.stage] || '';
   document.getElementById('page').innerHTML = `
     <div class="d-flex justify-content-between align-items-start mb-4">
       <div>
         <h1 class="fs-3 mb-1">${escapeHtml(enquiry.clientName || enquiry.enquiryId)}</h1>
-        <p class="text-secondary mb-0">${escapeHtml(enquiry.enquiryId)} · ${escapeHtml(enquiry.stage)}</p>
+        <p class="text-secondary mb-0">${escapeHtml(enquiry.enquiryId)} · ${escapeHtml(enquiry.stage)}${dept ? ' · ' + escapeHtml(dept) : ''}${enquiry.bookingRef ? ' · ' + escapeHtml(enquiry.bookingRef) : ''}</p>
       </div>
       <div class="d-flex gap-2">
-        ${isAdmin() ? `<button class="btn btn-outline-primary btn-sm" id="make-milestones" type="button">Create deposit / balance</button>` : ''}
+        ${canAction('generateMilestones') || isAdmin() ? `<button class="btn btn-outline-primary btn-sm" id="make-milestones" type="button">Create deposit / balance</button>` : ''}
       </div>
     </div>
     ${enquiryForm(enquiry, clients.items || [])}
     <div class="row g-3 mt-1">
       <div class="col-lg-6">
         <div class="card"><div class="card-body">
-          <h2 class="h6">Follow-up / timeline</h2>
+          <h2 class="h6">Diary</h2>
           <form id="activity-form" class="activity-composer mb-3">
             <div class="row g-2">
-              <div class="col-md-3"><select class="form-select" name="type">${optionList(ACTIVITY_TYPES, 'follow-up')}</select></div>
-              <div class="col-md-5"><input class="form-control" name="summary" placeholder="Call, WhatsApp, or what is next" required></div>
-              <div class="col-md-2"><input class="form-control" type="date" name="dueAt" aria-label="Due date"></div>
-              <div class="col-md-2"><button class="btn btn-light w-100" type="submit">Log</button></div>
+              <div class="col-md-4"><select class="form-select" name="type">${optionList(ACTIVITY_TYPES, 'follow-up')}</select></div>
+              <div class="col-md-4"><select class="form-select" name="department">${optionList(DEPARTMENTS, dept || 'Sales')}</select></div>
+              <div class="col-12"><input class="form-control" name="summary" placeholder="What was done" required></div>
+              <div class="col-md-6"><input class="form-control" name="outcome" placeholder="Outcome"></div>
+              <div class="col-md-6"><input class="form-control" name="nextAction" placeholder="Next action"></div>
+              <div class="col-md-6"><input class="form-control" type="date" name="dueAt" aria-label="Follow-up date"></div>
+              <div class="col-md-6"><button class="btn btn-light w-100" type="submit">Log diary entry</button></div>
             </div>
           </form>
-          ${listOrEmpty(detail.activities, (item) => `<div class="border-bottom py-2"><div>${escapeHtml(item.summary)}</div><div class="small text-secondary">${escapeHtml(item.type)} · ${escapeHtml(formatDate(item.dueAt || item.createdAt))}${item.completedAt ? ' · done' : ''}</div></div>`)}
+          ${listOrEmpty(detail.activities, (item) => `<div class="border-bottom py-2"><div>${escapeHtml(item.summary)}</div><div class="small text-secondary">${escapeHtml(item.type)}${item.department ? ' · ' + escapeHtml(item.department) : ''} · ${escapeHtml(formatDate(item.dueAt || item.createdAt))}${item.outcome ? ' · ' + escapeHtml(item.outcome) : ''}${item.nextAction ? ' · next: ' + escapeHtml(item.nextAction) : ''}</div></div>`)}
         </div></div>
       </div>
       <div class="col-lg-6">
-        <div class="card"><div class="card-body">
+        <div class="card mb-3"><div class="card-body">
           <h2 class="h6">Payment milestones</h2>
           ${listOrEmpty(payments, (item) => `
             <div class="border rounded-2 p-3 mb-2">
@@ -797,9 +972,26 @@ async function renderEnquiryDetail(enquiryId) {
               </div>
               <div>${escapeHtml(item.currency)} ${escapeHtml(item.amount)} · due ${escapeHtml(formatDate(item.dueDate))}</div>
               ${item.note ? `<div class="small text-secondary">${escapeHtml(item.note)}</div>` : ''}
-              ${isAdmin() && item.status === 'due' ? `<button class="btn btn-sm btn-primary mt-2 mark-paid" data-id="${escapeHtml(item.paymentId)}" type="button">Mark received</button>` : ''}
+              ${canAction('markPaymentPaid') && item.status === 'due' ? `<button class="btn btn-sm btn-primary mt-2 mark-paid" data-id="${escapeHtml(item.paymentId)}" type="button">Mark received</button>` : ''}
             </div>`)}
-          <p class="small text-secondary mb-0">Public T&amp;Cs: 50% deposit to book, balance 90 days before departure. Cancel &gt;90 days = 50%, ≤90 days = 100%.</p>
+          <p class="small text-secondary mb-0">${fieldAccess('payments') === 'full' ? 'Public T&amp;Cs: 50% deposit to book, balance 90 days before departure. Cancel &gt;90 days = 50%, ≤90 days = 100%.' : 'Payment status is summarised for your role. Only Accounts can edit amounts.'}</p>
+        </div></div>
+        <div class="card"><div class="card-body">
+          <h2 class="h6">Handover</h2>
+          <form id="handover-form" class="mb-3">
+            <div class="row g-2">
+              <div class="col-md-6"><label class="form-label">From</label><select class="form-select" name="fromDepartment">${optionList(DEPARTMENTS, dept || 'Sales')}</select></div>
+              <div class="col-md-6"><label class="form-label">To</label><select class="form-select" name="toDepartment">${optionList(DEPARTMENTS, 'Reservations')}</select></div>
+              <div class="col-md-6"><label class="form-label">Hand to</label><select class="form-select" name="handedTo">${staffOptions(enquiry.ownerId)}</select></div>
+              <div class="col-md-6"><label class="form-label">Date</label><input class="form-control" type="date" name="handoverDate" value="${escapeHtml(new Date().toISOString().slice(0, 10))}"></div>
+              <div class="col-12"><label class="form-label">Reason</label><input class="form-control" name="reason" required placeholder="Why handing over"></div>
+              <div class="col-12"><label class="form-label">Remarks</label><input class="form-control" name="remarks"></div>
+              <div class="col-12"><button class="btn btn-light" type="submit">Record handover</button></div>
+            </div>
+          </form>
+          ${listOrEmpty(handovers, (item) => `<div class="border-bottom py-2"><div>${escapeHtml(item.fromDepartment || '—')} → ${escapeHtml(item.toDepartment)}</div><div class="small text-secondary">${escapeHtml(formatDate(item.handoverDate))} · ${escapeHtml(item.reason || '')} · ${escapeHtml(item.ackStatus || 'Pending')}${item.handedToName ? ' · to ' + escapeHtml(item.handedToName) : ''}</div>
+            ${item.ackStatus !== 'Acknowledged' ? `<button class="btn btn-sm btn-light mt-1 ack-handover" data-id="${escapeHtml(item.handoverId)}" type="button">Acknowledge</button>` : ''}
+          </div>`)}
         </div></div>
       </div>
     </div>`;
@@ -811,13 +1003,51 @@ async function renderEnquiryDetail(enquiryId) {
     const form = Object.fromEntries(new FormData(activityForm).entries());
     setBusy(button, true, 'Saving…');
     try {
-      await api('createActivity', { enquiryId: enquiryId, type: form.type, summary: form.summary, dueAt: form.dueAt });
-      notify('Follow-up logged.', 'success');
+      await api('createActivity', {
+        enquiryId: enquiryId,
+        type: form.type,
+        summary: form.summary,
+        department: form.department,
+        outcome: form.outcome,
+        nextAction: form.nextAction,
+        dueAt: form.dueAt
+      });
+      notify('Diary entry logged.', 'success');
       await renderEnquiryDetail(enquiryId);
     } catch (error) {
       setBusy(button, false);
       notify(error.message, 'danger');
     }
+  });
+  const handoverForm = document.getElementById('handover-form');
+  if (handoverForm) {
+    handoverForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = handoverForm.querySelector('button[type=submit]');
+      const form = Object.fromEntries(new FormData(handoverForm).entries());
+      setBusy(button, true, 'Saving…');
+      try {
+        await api('createHandover', Object.assign({ enquiryId: enquiryId }, form));
+        notify('Handover recorded.', 'success');
+        await renderEnquiryDetail(enquiryId);
+      } catch (error) {
+        setBusy(button, false);
+        notify(error.message, 'danger');
+      }
+    });
+  }
+  document.querySelectorAll('.ack-handover').forEach((button) => {
+    button.addEventListener('click', async () => {
+      setBusy(button, true, 'Saving…');
+      try {
+        await api('acknowledgeHandover', { handoverId: button.getAttribute('data-id') });
+        notify('Handover acknowledged.', 'success');
+        await renderEnquiryDetail(enquiryId);
+      } catch (error) {
+        setBusy(button, false);
+        notify(error.message, 'danger');
+      }
+    });
   });
   document.querySelectorAll('.mark-paid').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -854,9 +1084,11 @@ function wireEnquiryForm(enquiryId) {
   if (!form) return;
   const stage = form.querySelector('[name=stage]');
   const lostWrap = document.getElementById('lost-wrap');
+  const deptDisplay = form.querySelector('[name=departmentDisplay]');
   if (stage && lostWrap) {
     stage.addEventListener('change', () => {
-      lostWrap.style.display = stage.value === 'Lost' ? '' : 'none';
+      lostWrap.style.display = TERMINAL_STAGES.indexOf(stage.value) !== -1 ? '' : 'none';
+      if (deptDisplay) deptDisplay.value = STAGE_DEPARTMENT[stage.value] || '';
     });
   }
   const toggleGuest = document.getElementById('toggle-new-guest');
@@ -919,8 +1151,17 @@ function wireEnquiryForm(enquiryId) {
   });
 }
 
-async function renderClients() {
+async function renderClients(editClientId) {
   const data = await api('listClients', {});
+  let editing = null;
+  if (editClientId) {
+    try {
+      const detail = await api('getClientDetail', { clientId: editClientId });
+      editing = detail.client;
+    } catch (error) {
+      notify(error.message, 'danger');
+    }
+  }
   document.getElementById('page').innerHTML = `
     <div class="d-flex justify-content-between align-items-start mb-4 gap-3 flex-wrap">
       <div><h1 class="fs-3 mb-1">Clients</h1><p class="text-secondary mb-0">Add a guest by hand, or fill the form from a website CSV.</p></div>
@@ -944,21 +1185,24 @@ async function renderClients() {
     <div class="row g-3">
       <div class="col-lg-5">
         <form id="client-form" class="card"><div class="card-body p-4">
-          <h2 class="h6 mb-3">New client</h2>
-          <div class="mb-3"><label class="form-label">Full name</label><input class="form-control" name="fullName" required></div>
-          <div class="mb-3"><label class="form-label">Email</label><input class="form-control" type="email" name="email"></div>
-          <div class="mb-3">${phoneField('', { phoneCountry: '255' })}</div>
-          <details class="mb-3">
+          <h2 class="h6 mb-3">${editing ? 'Edit client' : 'New client'}</h2>
+          ${editing ? `<input type="hidden" name="clientId" value="${escapeHtml(editing.clientId)}">` : ''}
+          <div class="mb-3"><label class="form-label">Full name</label><input class="form-control" name="fullName" required value="${escapeHtml((editing && editing.fullName) || '')}"></div>
+          <div class="mb-3"><label class="form-label">Email</label><input class="form-control" type="email" name="email" value="${escapeHtml((editing && editing.email) || '')}"></div>
+          <div class="mb-3">${phoneField('', editing || { phoneCountry: '255' })}</div>
+          <details class="mb-3" ${editing ? 'open' : ''}>
             <summary class="small mb-2">More details</summary>
-            <div class="mb-3 mt-2"><label class="form-label">Nationality / residence</label><input class="form-control" name="nationality"></div>
-            <div class="mb-3"><label class="form-label">Party type</label><select class="form-select" name="partyType">${optionList(PARTY_TYPES, 'couple')}</select></div>
-            <div class="mb-3"><label class="form-label">Language notes</label><input class="form-control" name="languageNotes"></div>
-            <div class="mb-3"><label class="form-label">How they heard of Lamai</label><select class="form-select" name="source">${optionList(['web form', 'email', 'phone/WhatsApp', 'repeat guest', 'referral', 'other'], 'web form')}</select></div>
+            <div class="mb-3 mt-2"><label class="form-label">Nationality / residence</label><input class="form-control" name="nationality" value="${escapeHtml((editing && editing.nationality) || '')}"></div>
+            <div class="mb-3"><label class="form-label">Party type</label><select class="form-select" name="partyType">${optionList(PARTY_TYPES, (editing && editing.partyType) || 'couple')}</select></div>
+            <div class="mb-3"><label class="form-label">Language notes</label><input class="form-control" name="languageNotes" value="${escapeHtml((editing && editing.languageNotes) || '')}"></div>
+            <div class="mb-3"><label class="form-label">How they heard of Lamai</label><select class="form-select" name="source">${optionList(['web form', 'email', 'phone/WhatsApp', 'repeat guest', 'referral', 'other'], (editing && editing.source) || 'web form')}</select></div>
           </details>
-          <div class="mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2"></textarea></div>
+          <div class="mb-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2">${escapeHtml((editing && editing.notes) || '')}</textarea></div>
           <div class="form-sticky-actions d-flex gap-2 flex-wrap">
-            <button class="btn btn-primary" type="submit">Save client</button>
-            <button class="btn btn-light" name="thenEnquiry" value="1" type="submit">Save and file enquiry</button>
+            <button class="btn btn-primary" type="submit">${editing ? 'Save changes' : 'Save client'}</button>
+            ${editing
+              ? `<a class="btn btn-light" href="#/clients">Cancel</a><button class="btn btn-light" name="thenEnquiry" value="1" type="submit">Save and file enquiry</button>`
+              : `<button class="btn btn-light" name="thenEnquiry" value="1" type="submit">Save and file enquiry</button>`}
           </div>
         </div></form>
       </div>
@@ -966,12 +1210,15 @@ async function renderClients() {
         <div class="card"><div class="card-body">
           ${(data.items || []).length
             ? `<div class="table-responsive"><table class="table align-middle">
-            <thead><tr><th>Name</th><th>Phone</th><th>Party</th>${isAdmin() ? '<th></th>' : ''}</tr></thead>
+            <thead><tr><th>Name</th><th>Phone</th><th>Party</th><th></th></tr></thead>
             <tbody>${data.items.map((item) => `<tr>
-              <td>${escapeHtml(item.fullName)}</td>
+              <td><a href="#/clients/${escapeHtml(item.clientId)}">${escapeHtml(item.fullName)}</a></td>
               <td>+${escapeHtml(item.phoneCountry || '')} ${escapeHtml(item.phoneNumber || '')}</td>
               <td>${escapeHtml(item.partyType || '')}</td>
-              ${isAdmin() ? `<td><button class="btn btn-sm btn-light delete-client" data-id="${escapeHtml(item.clientId)}" data-name="${escapeHtml(item.fullName)}" type="button">Delete</button></td>` : ''}
+              <td class="text-nowrap">
+                <a class="btn btn-sm btn-light" href="#/clients/${escapeHtml(item.clientId)}">Edit</a>
+                ${isAdmin() ? `<button class="btn btn-sm btn-light delete-client" data-id="${escapeHtml(item.clientId)}" data-name="${escapeHtml(item.fullName)}" type="button">Delete</button>` : ''}
+              </td>
             </tr>`).join('')}</tbody>
           </table></div>`
             : emptyState('No clients yet', 'Add the guest, then file the enquiry.', '', '')}
@@ -987,14 +1234,16 @@ async function renderClients() {
     const fileEnquiry = button && button.getAttribute('name') === 'thenEnquiry';
     setBusy(button, true, 'Saving…');
     try {
-      const created = await api('createClient', payload);
-      notify('Client saved.', 'success');
-      if (fileEnquiry && created && created.clientId) {
-        window.sessionStorage.setItem('lamai.newEnquiryClient', created.clientId);
+      const saved = payload.clientId
+        ? await api('updateClient', payload)
+        : await api('createClient', payload);
+      notify(payload.clientId ? 'Client updated.' : 'Client saved.', 'success');
+      if (fileEnquiry && saved && saved.clientId) {
+        window.sessionStorage.setItem('lamai.newEnquiryClient', saved.clientId);
         go('#/enquiries/new');
         return;
       }
-      if (state.csvRows && state.csvRows.length) {
+      if (!payload.clientId && state.csvRows && state.csvRows.length) {
         state.csvRows.splice(state.csvIndex || 0, 1);
         if (state.csvRows.length) {
           fillClientForm(state.csvRows[Math.min(state.csvIndex || 0, state.csvRows.length - 1)]);
@@ -1136,7 +1385,7 @@ async function renderPayments() {
           <td>${escapeHtml(item.currency)} ${escapeHtml(item.amount)}</td>
           <td>${escapeHtml(formatDate(item.dueDate))}</td>
           <td>${escapeHtml(item.status)}</td>
-          <td>${item.status === 'due' ? `<button class="btn btn-sm btn-primary mark-paid" data-id="${escapeHtml(item.paymentId)}" type="button">Mark received</button>` : ''}</td>
+          <td>${item.status === 'due' && canAction('markPaymentPaid') ? `<button class="btn btn-sm btn-primary mark-paid" data-id="${escapeHtml(item.paymentId)}" type="button">Mark received</button>` : ''}</td>
         </tr>`).join('') || `<tr><td colspan="6" class="text-secondary">No milestones yet.</td></tr>`}</tbody>
       </table></div>
     </div></div>`;
@@ -1160,21 +1409,52 @@ async function renderReports() {
   const data = await api('getReportData', {});
   document.getElementById('page').innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-      <div><h1 class="fs-3 mb-1">Reports</h1><p class="text-secondary mb-0">Simple counts, not a ledger.</p></div>
+      <div><h1 class="fs-3 mb-1">Reports</h1><p class="text-secondary mb-0">Department and stage counts for the ops board.</p></div>
       <button class="btn btn-primary" id="download-excel" type="button">Download Excel</button>
     </div>
     <div class="row g-3 mb-4">
       ${statCard('ti-files', 'Live files', data.liveCount || 0, 'primary')}
       ${statCard('ti-alert-circle', 'Overdue follow-ups', data.overdueCount || 0, 'danger')}
       ${statCard('ti-cash', 'Unpaid milestones', data.unpaidCount || 0, 'warning')}
+      ${statCard('ti-transfer', 'Pending handovers', data.pendingHandoverCount || 0, 'info')}
     </div>
-    <div class="card"><div class="card-body">
-      <h2 class="h6">By stage</h2>
-      <div class="table-responsive"><table class="table">
-        <thead><tr><th>Stage</th><th>Count</th></tr></thead>
-        <tbody>${(data.byStage || []).map((row) => `<tr><td>${escapeHtml(row.stage)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('')}</tbody>
-      </table></div>
-    </div></div>`;
+    <div class="row g-3 mb-4">
+      ${statCard('ti-check', 'Confirmed bookings', data.confirmedBookings || 0, 'success')}
+      ${statCard('ti-flag', 'Completed trips', data.completedTrips || 0, 'success')}
+      ${statCard('ti-cash', 'Est. revenue', (data.estimatedRevenue || 0).toLocaleString(), 'warning')}
+    </div>
+    <div class="row g-3 mb-4">
+      <div class="col-lg-6"><div class="card"><div class="card-body">
+        <h2 class="h6">By department</h2>
+        <div class="table-responsive"><table class="table">
+          <thead><tr><th>Department</th><th>Count</th></tr></thead>
+          <tbody>${(data.byDepartment || []).map((row) => `<tr><td>${escapeHtml(row.department)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div></div></div>
+      <div class="col-lg-6"><div class="card"><div class="card-body">
+        <h2 class="h6">By stage</h2>
+        <div class="table-responsive"><table class="table">
+          <thead><tr><th>Stage</th><th>Count</th></tr></thead>
+          <tbody>${(data.byStage || []).map((row) => `<tr><td>${escapeHtml(row.stage)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div></div></div>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-6"><div class="card"><div class="card-body">
+        <h2 class="h6">By source</h2>
+        <div class="table-responsive"><table class="table">
+          <thead><tr><th>Source</th><th>Count</th></tr></thead>
+          <tbody>${(data.bySource || []).map((row) => `<tr><td>${escapeHtml(row.source)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="text-secondary">No data</td></tr>'}</tbody>
+        </table></div>
+      </div></div></div>
+      <div class="col-lg-6"><div class="card"><div class="card-body">
+        <h2 class="h6">By destination</h2>
+        <div class="table-responsive"><table class="table">
+          <thead><tr><th>Destination</th><th>Count</th></tr></thead>
+          <tbody>${(data.byDestination || []).map((row) => `<tr><td>${escapeHtml(row.destination)}</td><td>${escapeHtml(row.count)}</td></tr>`).join('') || '<tr><td colspan="2" class="text-secondary">No data</td></tr>'}</tbody>
+        </table></div>
+      </div></div></div>
+    </div>`;
   document.getElementById('download-excel').addEventListener('click', async (event) => {
     const button = event.currentTarget;
     setBusy(button, true, 'Preparing…');
@@ -1198,12 +1478,27 @@ async function renderReports() {
 
 async function renderSettings() {
   const data = await api('getAdminData', {});
+  const settings = data.settings || {};
   document.getElementById('page').innerHTML = `
-    <div class="mb-4"><h1 class="fs-3 mb-1">Settings</h1><p class="text-secondary">Staff accounts and trip reference lists.</p></div>
+    <div class="mb-4"><h1 class="fs-3 mb-1">Settings</h1><p class="text-secondary">Company profile, staff accounts, and trip reference lists.</p></div>
+    <form id="company-form" class="card mb-3"><div class="card-body p-4">
+      <h2 class="h6 mb-3">Company profile</h2>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Legal name</label><input class="form-control" name="legalName" value="${escapeHtml(settings.legalName || '')}"></div>
+        <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" name="email" value="${escapeHtml(settings.email || '')}"></div>
+        <div class="col-md-6"><label class="form-label">Phone</label><input class="form-control" name="phone" value="${escapeHtml(settings.phone || '')}"></div>
+        <div class="col-md-6"><label class="form-label">TIN</label><input class="form-control" name="tin" value="${escapeHtml(settings.tin || '')}"></div>
+        <div class="col-12"><label class="form-label">Office</label><input class="form-control" name="office" value="${escapeHtml(settings.office || '')}"></div>
+        <div class="col-md-6"><label class="form-label">Postal</label><input class="form-control" name="postal" value="${escapeHtml(settings.postal || '')}"></div>
+        <div class="col-md-6"><label class="form-label">Timezone</label><input class="form-control" name="timezone" value="${escapeHtml(settings.timezone || 'Africa/Dar_es_Salaam')}"></div>
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Save company profile</button>
+    </div></form>
     <form id="staff-form" class="card mb-3"><div class="card-body p-4">
       <h2 class="h6 mb-3">Add staff</h2>
       <div class="mb-3"><label class="form-label">Name</label><input class="form-control" name="displayName" required></div>
-      <div class="mb-3"><label class="form-label">Work label</label><select class="form-select" name="workLabel">${optionList(WORK_LABELS, 'Sales')}</select></div>
+      <div class="mb-3"><label class="form-label">Department role</label><select class="form-select" name="workLabel">${optionList(WORK_LABELS, 'Sales')}</select>
+        <div class="form-text">Sets Sales, Reservations, Accounts, Operations, or Guide permissions.</div></div>
       <button class="btn btn-primary" type="submit">Create account</button>
       <div id="staff-once"></div>
     </div></form>
@@ -1226,7 +1521,7 @@ async function renderSettings() {
         <h3 class="h6">Edit staff</h3>
         <input type="hidden" name="userId">
         <div class="mb-2"><label class="form-label">Name</label><input class="form-control" name="displayName" required></div>
-        <div class="mb-3"><label class="form-label">Work label</label><select class="form-select" name="workLabel">${optionList(WORK_LABELS, 'Sales')}</select></div>
+        <div class="mb-3"><label class="form-label">Department role</label><select class="form-select" name="workLabel">${optionList(WORK_LABELS, 'Sales')}</select></div>
         <button class="btn btn-primary" type="submit">Save changes</button>
       </form>
     </div></div>
@@ -1237,6 +1532,20 @@ async function renderSettings() {
       <button class="btn btn-primary" type="submit">Add</button>
       <div class="mt-3 small">${(data.references && data.references.destinations || []).map((item) => escapeHtml(item.label)).join(', ')}</div>
     </div></form>`;
+  document.getElementById('company-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = event.target.querySelector('button[type=submit]');
+    const settingsPayload = Object.fromEntries(new FormData(event.target).entries());
+    setBusy(button, true, 'Saving…');
+    try {
+      await api('updateSettings', { settings: settingsPayload });
+      setBusy(button, false);
+      notify('Company profile saved.', 'success');
+    } catch (error) {
+      setBusy(button, false);
+      notify(error.message, 'danger');
+    }
+  });
   document.getElementById('staff-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const button = event.target.querySelector('button[type=submit]');
@@ -1335,7 +1644,7 @@ async function renderSettings() {
 }
 
 function noticeId(kind, item) {
-  return kind + ':' + (item.enquiryId || item.paymentId || '');
+  return kind + ':' + (item.enquiryId || item.paymentId || item.handoverId || '');
 }
 
 function seenNoticeIds() {
@@ -1347,11 +1656,13 @@ function seenNoticeIds() {
 }
 
 function flattenNotices() {
-  const notices = state.notices || { dueToday: [], overdue: [], unpaid: [] };
+  const notices = state.notices || { dueToday: [], overdue: [], unpaid: [], pendingHandovers: [], missingConfirmations: [] };
   return []
     .concat((notices.overdue || []).map((item) => Object.assign({}, item, { kind: 'overdue', label: 'Overdue' })))
     .concat((notices.dueToday || []).map((item) => Object.assign({}, item, { kind: 'due', label: 'Due today' })))
-    .concat((notices.unpaid || []).map((item) => Object.assign({}, item, { kind: 'pay', label: 'Payment due' })));
+    .concat((notices.unpaid || []).map((item) => Object.assign({}, item, { kind: 'pay', label: 'Payment due' })))
+    .concat((notices.pendingHandovers || []).map((item) => Object.assign({}, item, { kind: 'handover', label: 'Handover' })))
+    .concat((notices.missingConfirmations || []).map((item) => Object.assign({}, item, { kind: 'supplier', label: 'Missing confirmation' })));
 }
 
 function renderNoticePanel(markSeen) {
@@ -1444,10 +1755,63 @@ async function refreshBootstrap() {
 
 function requireAdmin() {
   if (!isAdmin()) {
-    document.getElementById('page').innerHTML = '<div class="alert alert-warning">Only Super Admin can open this page.</div>';
+    denyPage('Only Admin can open this page.');
     return false;
   }
   return true;
+}
+
+async function renderHandovers() {
+  if (!requireModule('handovers')) return;
+  const data = await api('listHandovers', { pendingOnly: false });
+  document.getElementById('page').innerHTML = `
+    <div class="mb-4"><h1 class="fs-3 mb-1">Handovers</h1><p class="text-secondary">Incoming and outgoing department handovers.</p></div>
+    <div class="card"><div class="card-body">
+      ${listOrEmpty(data.items, (item) => `<div class="border-bottom py-3 d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div>
+          <a href="#/enquiries/${escapeHtml(item.enquiryId)}">${escapeHtml(item.clientName || item.enquiryId)}</a>
+          <div class="small text-secondary">${escapeHtml(item.fromDepartment || '—')} → ${escapeHtml(item.toDepartment)} · ${escapeHtml(formatDate(item.handoverDate))} · ${escapeHtml(item.ackStatus || 'Pending')}</div>
+          <div class="small">${escapeHtml(item.reason || '')}${item.handedToName ? ' · to ' + escapeHtml(item.handedToName) : ''}</div>
+        </div>
+        ${item.ackStatus !== 'Acknowledged' ? `<button class="btn btn-sm btn-primary ack-handover" data-id="${escapeHtml(item.handoverId)}" type="button">Acknowledge</button>` : ''}
+      </div>`)}
+    </div></div>`;
+  document.querySelectorAll('.ack-handover').forEach((button) => {
+    button.addEventListener('click', async () => {
+      setBusy(button, true, 'Saving…');
+      try {
+        await api('acknowledgeHandover', { handoverId: button.getAttribute('data-id') });
+        notify('Handover acknowledged.', 'success');
+        await renderHandovers();
+      } catch (error) {
+        setBusy(button, false);
+        notify(error.message, 'danger');
+      }
+    });
+  });
+}
+
+async function renderArchive() {
+  if (!requireModule('archive')) return;
+  const data = await api('listArchivedEnquiries', {});
+  document.getElementById('page').innerHTML = `
+    <div class="mb-4"><h1 class="fs-3 mb-1">Archive</h1><p class="text-secondary">Closed and archived files remain searchable.</p></div>
+    ${(data.items || []).length
+      ? `<div class="card"><div class="card-body">
+      <div class="table-responsive"><table class="table table-clickable align-middle">
+        <thead><tr><th>Guest</th><th>Stage</th><th>Dept</th><th>Owner</th><th>Travel</th><th>Reason</th></tr></thead>
+        <tbody>${(data.items || []).map((item) => `<tr data-href="#/enquiries/${escapeHtml(item.enquiryId)}">
+          <td>${escapeHtml(item.clientName || item.enquiryId)}</td>
+          <td>${escapeHtml(item.stage)}</td>
+          <td>${escapeHtml(item.department || '—')}</td>
+          <td>${escapeHtml(item.ownerName || '—')}</td>
+          <td>${escapeHtml(formatDate(item.startDate))}</td>
+          <td>${escapeHtml(item.lostReason || '—')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div></div>`
+      : '<div class="card"><div class="card-body"><p class="text-secondary mb-0">No closed or archived files in your scope.</p></div></div>'}`;
+  bindTableLinks();
 }
 
 async function route() {
@@ -1514,17 +1878,22 @@ async function route() {
   try {
     if (info.path === '/today' || info.path === '/') await renderToday();
     else if (info.path === '/pipeline') await renderPipeline();
-    else if (info.path === '/enquiries/new') await renderEnquiryNew();
-    else if (info.parts[0] === 'enquiries' && info.parts[1]) await renderEnquiryDetail(info.parts[1]);
+    else if (info.path === '/enquiries/new') {
+      if (!canAction('createEnquiry')) denyPage('Only Sales or Admin can create a new enquiry.');
+      else await renderEnquiryNew();
+    } else if (info.parts[0] === 'enquiries' && info.parts[1]) await renderEnquiryDetail(info.parts[1]);
     else if (info.path === '/enquiries') await renderEnquiryList();
+    else if (info.parts[0] === 'clients' && info.parts[1]) await renderClients(info.parts[1]);
     else if (info.path === '/clients') await renderClients();
     else if (info.path === '/work') await renderWork();
+    else if (info.path === '/handovers') await renderHandovers();
+    else if (info.path === '/archive') await renderArchive();
     else if (info.path === '/payments') {
-      if (requireAdmin()) await renderPayments();
+      if (requireModule('payments', 'Only Accounts or Admin can open payments.')) await renderPayments();
     } else if (info.path === '/reports') {
-      if (requireAdmin()) await renderReports();
+      if (requireModule('reports')) await renderReports();
     } else if (info.path === '/settings') {
-      if (requireAdmin()) await renderSettings();
+      if (requireModule('settings', 'Only Admin can open Settings.')) await renderSettings();
     } else {
       document.getElementById('page').innerHTML = '<div class="alert alert-light">Page not found.</div>';
     }

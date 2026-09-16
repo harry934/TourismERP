@@ -57,6 +57,8 @@ Session token is stored in `localStorage` key `lamai.token`. Username remember u
 | [`src/ClientService.gs`](../src/ClientService.gs) | Guests: list/create/update/delete |
 | [`src/EnquiryService.gs`](../src/EnquiryService.gs) | Trip files, dashboard, search, work, notifications |
 | [`src/PaymentService.gs`](../src/PaymentService.gs) | Deposit/balance milestones |
+| [`src/HandoverService.gs`](../src/HandoverService.gs) | Department handovers + acknowledgement |
+| [`src/PermissionService.gs`](../src/PermissionService.gs) | Role IDs, module/action/field maps, record scope |
 | [`src/ReportService.gs`](../src/ReportService.gs) | Counts + Excel-friendly CSV export |
 | [`src/SheetRepository.gs`](../src/SheetRepository.gs) | Spreadsheet read/upsert/delete/audit |
 | [`src/DomainCommon.gs`](../src/DomainCommon.gs) | Validation, hashing, ids, `withLock_` |
@@ -72,21 +74,33 @@ Created on first Super Admin setup (`initializeWorkspace_`). Primary keys in [`A
 | --- | --- | --- |
 | Users | `userId` | Login, role, work label, password hash, `sessionEpoch` |
 | Clients | `clientId` | Guest contact |
-| Enquiries | `enquiryId` | Trip file, stage, owner, dates, budget, next follow-up |
-| Activities | `activityId` | Notes / calls / follow-ups on an enquiry |
+| Enquiries | `enquiryId` | Trip file, PDF stage, department, priority, status, booking ref, owner, dates, budget, next follow-up |
+| Activities | `activityId` | Diary entries (type, summary, department, outcome, next action, due) |
+| Handovers | `handoverId` | Department handovers (from/to, reason, handed by/to, ack status) |
 | Payments | `paymentId` | Deposit and balance rows |
-| Settings | `key` | Optional company profile keys (not shown in Settings UI) |
+| Settings | `key` | Company profile keys (editable in Settings UI) |
 | ReferenceData | `itemId` | Destinations and travel styles |
 | AuditLog | `auditId` | Who did what (kept when a client/staff row is deleted) |
+
+**Pipeline stages (PDF):** New enquiry → Quoting → Follow-up → Accepted → Confirmed booking → Reservations in progress → Supplier booking completed → Awaiting payment → Paid → Operations in progress → Travel completed → Closed → Archived.
+
+**Departments:** Sales, Reservations, Accounts, Operations (auto-set from stage). Live stages exclude Closed and Archived.
+
+**Work labels:** Sales, Reservations, Accounts, Operations, Guide.
 
 ---
 
 ## 4. Roles
 
-- **Super Admin:** payments, reports, settings, Excel download, permanent deletes, mark paid, create staff.
-- **Staff:** Today, Pipeline, Enquiries, Clients, Work, search, bell (follow-ups). They only see files they own **or** unassigned files, depending on the method (dashboard/work filter by owner; enquiry list is all non-archived for now via `listEnquiries` unless a later filter is added).
+Five operational role IDs (see [RBAC.md](RBAC.md)):
 
-Admin-only nav items use `.admin-only` in [`index.html`](../web/src/index.html).
+- **ADMIN** (`Super Admin`): all modules including Settings; company-wide dashboard.
+- **SALES** (Staff + work label Sales): create enquiries, sales fields, sales pipeline widgets; payment status summary only.
+- **RESERVATIONS**: supplier/booking fields; reservations widgets; no finance edits.
+- **ACCOUNTS**: payments list, mark paid, finance fields; no Settings.
+- **OPERATIONS** (also Guide label): operations notes/completion; no finance edits.
+
+Access is enforced in [`PermissionService.gs`](../src/PermissionService.gs) (modules, actions, record scope, field masks). Nav uses `data-module` attributes, not `.admin-only`.
 
 ---
 
@@ -96,16 +110,19 @@ All routing is in `route()` in `app.js`.
 
 | Hash | Screen function | Who | What you see |
 | --- | --- | --- | --- |
-| `#/today` | `renderToday` | All | Stat cards + due/overdue lists + open files table |
-| `#/pipeline` | `renderPipeline` | All | Live stages as headings; files listed under each |
-| `#/enquiries` | `renderEnquiryList` | All | Table of all trip files |
-| `#/enquiries/new` | `renderEnquiryNew` | All | New enquiry form |
-| `#/enquiries/{id}` | `renderEnquiryDetail` | All | Edit enquiry, log follow-up, payments |
-| `#/clients` | `renderClients` | All | New client form, CSV import, guest list |
-| `#/work` | `renderWork` | All | Due and overdue follow-ups |
-| `#/payments` | `renderPayments` | Admin | All payment rows; mark received |
-| `#/reports` | `renderReports` | Admin | Counts by stage + Download Excel |
-| `#/settings` | `renderSettings` | Admin | Staff + destination/style labels |
+| `#/today` | `renderToday` | All | Role-aware widgets (own files, handovers, dept KPIs) |
+| `#/pipeline` | `renderPipeline` | All | Stages for the user’s department band |
+| `#/enquiries` | `renderEnquiryList` | All | Scoped trip files |
+| `#/enquiries/new` | `renderEnquiryNew` | Sales/Admin | New enquiry form |
+| `#/enquiries/{id}` | `renderEnquiryDetail` | Scoped | Edit (field-masked), diary, handovers, payments |
+| `#/clients` | `renderClients` | All | Guest list / create (edit: Sales/Admin) |
+| `#/clients/{id}` | `renderClients` | Sales/Admin edit | Edit existing guest |
+| `#/work` | `renderWork` | All | Due and overdue follow-ups (scoped) |
+| `#/handovers` | `renderHandovers` | All | Incoming/outgoing handovers |
+| `#/archive` | `renderArchive` | All | Closed/archived files in scope |
+| `#/payments` | `renderPayments` | Admin/Accounts | Payment rows; mark received |
+| `#/reports` | `renderReports` | All (scoped) | Role-filtered counts + CSV |
+| `#/settings` | `renderSettings` | Admin only | Company profile, staff, reference labels |
 | `#/change-password` | `renderChangePassword` | Signed in | Current / new / confirm password |
 | `#/sign-out` | `route` | Signed in | Calls `logout`, clears token |
 | (no session) | `renderSignIn` | Public | Username + password |
@@ -127,7 +144,7 @@ Defined in [`web/src/index.html`](../web/src/index.html), wired in `bindChromeTo
 | Nav: Payments / Reports / Settings | Super Admin only |
 | Collapsed icon hover | CSS `data-title` tooltip |
 | Search box | After 2 characters, `searchWorkspace`; results jump to client/enquiry/settings |
-| Bell | Dropdown of overdue, due today, unpaid (admin). Unread badge until opened |
+| Bell | Dropdown of overdue, due today, unpaid (admin), pending handovers. Unread badge until opened |
 | “Open all follow-ups” | `#/work` |
 | Avatar menu | Change password, Sign out |
 
@@ -149,8 +166,9 @@ Defined in [`web/src/index.html`](../web/src/index.html), wired in `bindChromeTo
 
 | Control | Effect |
 | --- | --- |
-| Stat cards | Counts only (live / due today / overdue / payments due) |
+| Stat cards | Live / due / overdue / handovers + by department, confirmed, completed, revenue, payments |
 | Follow-up / overdue names | Open enquiry |
+| Acknowledge handover | `acknowledgeHandover` |
 | Open work | `#/work` |
 | Open files rows | `#/enquiries/{id}` |
 | New enquiry | `#/enquiries/new` |
@@ -176,11 +194,13 @@ Defined in [`web/src/index.html`](../web/src/index.html), wired in `bindChromeTo
 | --- | --- | --- |
 | New guest on this page / Save guest | `createClient` | Creates guest and selects them |
 | Destination pills | (form) | Multi-select destinations |
-| Save | `createEnquiry` or `updateEnquiry` | Writes trip file; may auto-create payment milestones |
-| Stage → Lost | Requires lost reason | |
-| Follow-up Log | `createActivity` | Note + due date; can set next follow-up |
+| Save | `createEnquiry` or `updateEnquiry` | Writes trip file; department from stage; may auto-create payment milestones; department change creates handover |
+| Stage → Closed / Archived | Requires close reason; Archived also sets `archived=true` | |
+| Diary Log | `createActivity` | Summary + department + outcome + next action + due |
+| Record handover | `createHandover` | From/to department, handed to, reason |
+| Acknowledge handover | `acknowledgeHandover` | Marks ack status |
 | Create deposit / balance | `generatePaymentMilestones` | 50% deposit + 90-day balance |
-| Mark received | `markPaymentPaid` | Sets payment received; deposit can move stage to Confirmed |
+| Mark received | `markPaymentPaid` | Sets payment received; can advance stage toward Paid |
 
 ### Clients (`renderClients`)
 
@@ -190,9 +210,10 @@ Defined in [`web/src/index.html`](../web/src/index.html), wired in `bindChromeTo
 | Sample CSV | (browser) | Downloads header template |
 | Previous / Next / Skip | (browser) | Walk CSV rows |
 | CSV row click | (browser) | Load that row into the form |
-| Save client | `createClient` | Writes Clients sheet |
-| Save and file enquiry | `createClient` then `#/enquiries/new` | Prefills client |
-| **Delete** (admin) | `deleteClient` | Type guest name to confirm. Removes client **and** their enquiries, activities, and payments |
+| Save client | `createClient` or `updateClient` | Writes Clients sheet |
+| Edit link / `#/clients/{id}` | `getClientDetail` | Prefills edit form |
+| Save and file enquiry | save then `#/enquiries/new` | Prefills client |
+| **Delete** (admin) | `deleteClient` | Type guest name to confirm. Removes client **and** their enquiries, activities, payments, and handovers |
 
 ### Work
 
@@ -217,13 +238,12 @@ Defined in [`web/src/index.html`](../web/src/index.html), wired in `bindChromeTo
 
 | Control | Calls | Effect |
 | --- | --- | --- |
+| Save company profile | `updateSettings` | Legal name, office, phone, email, TIN, postal, timezone |
 | Create account | `createUser` | Staff user + one-time password box (copy + eye) |
 | Edit / Save changes | `updateUser` | Name and work label |
 | Reset password | `resetStaffPassword` | New one-time password; invalidates their sessions |
 | **Delete** | `deleteUser` | Type username to confirm. Removes the Users row (credentials gone). Clears `ownerId` on files they owned. **Does not** delete clients or trip files. Cannot delete Super Admin or yourself |
 | Add (destination/style) | `saveReferenceItem` | Used by enquiry form pills |
-
-Company legal/office/TIN fields were removed from this screen. Keys can still exist on the Settings sheet from earlier seeds.
 
 ---
 
@@ -233,39 +253,43 @@ Auth: `PUBLIC_METHODS_` need no token. `AUTH_WITHOUT_PASSWORD_GATE_` allow a ses
 
 | Method | File | Auth | What it does |
 | --- | --- | --- | --- |
-| `getBootstrap` | AuthService | Optional session | Ensures spreadsheet schema exists; returns `needsSetup`, session, staff, references, due count |
+| `getBootstrap` | AuthService | Optional session | Ensures spreadsheet schema; returns session, **permissions**, staff, references, due count |
 | `setupSuperAdmin` | AuthService | Public, once | First Super Admin + sheets |
 | `login` | AuthService | Public | Verifies password, creates cache session |
 | `logout` | AuthService | Session optional | Removes `sess:{token}` from CacheService |
 | `changePassword` | AuthService | Session (password gate skipped) | Re-hash password |
-| `getDashboardData` | EnquiryService | Signed in | Live files, due, overdue, payments due |
-| `listEnquiries` | EnquiryService | Signed in | Trip files; `liveOnly` skips Completed/Lost |
-| `getEnquiryDetail` | EnquiryService | Signed in | Enquiry + activities + payments |
+| `getDashboardData` | EnquiryService | Signed in | Live files, by department, handovers, revenue, due/overdue, payments |
+| `listEnquiries` | EnquiryService | Signed in | Scoped trip files; `liveOnly` / `includeArchived` |
+| `listArchivedEnquiries` | EnquiryService | Signed in | Closed/archived files in scope |
+| `getEnquiryDetail` | EnquiryService | Signed in | Enquiry + activities + masked payments + handovers |
 | `createEnquiry` | EnquiryService | Signed in | New trip file |
-| `updateEnquiry` | EnquiryService | Signed in | Save fields / stage change |
+| `updateEnquiry` | EnquiryService | Signed in | Save fields / stage change; auto handover on department change |
 | `transitionEnquiry` | EnquiryService | Signed in | Stage-only update (wrapper) |
-| `createActivity` | EnquiryService | Signed in | Log call/note/follow-up |
+| `createActivity` | EnquiryService | Signed in | Diary entry |
 | `getWorkData` | EnquiryService | Signed in | Due today + overdue |
-| `searchWorkspace` | EnquiryService | Signed in | Clients, files, staff (min 2 chars) |
-| `getNotificationData` | EnquiryService | Signed in | Work lists + unpaid for admin |
+| `searchWorkspace` | EnquiryService | Signed in | Clients, files (incl. archived), staff (min 2 chars) |
+| `getNotificationData` | EnquiryService | Signed in | Work lists + unpaid (admin) + pending handovers |
+| `listHandovers` | HandoverService | Signed in | Handovers for a file or pending list |
+| `createHandover` | HandoverService | Signed in | Manual department handover |
+| `acknowledgeHandover` | HandoverService | Signed in | Mark handover acknowledged |
 | `listClients` | ClientService | Signed in | Active guests |
-| `getClientDetail` | ClientService | Signed in | One guest (no dedicated UI page yet) |
+| `getClientDetail` | ClientService | Signed in | One guest |
 | `createClient` | ClientService | Signed in | New guest |
-| `updateClient` | ClientService | Signed in | Edit guest (API exists; Clients page currently creates) |
+| `updateClient` | ClientService | Signed in | Edit guest |
 | `deleteClient` | ClientService | Super Admin | Permanent cascade delete |
-| `listPayments` | PaymentService | Super Admin | All payment rows |
-| `generatePaymentMilestones` | PaymentService | Signed in | Deposit + balance from quoted amount |
-| `markPaymentPaid` | PaymentService | Super Admin | Mark received |
-| `updatePayment` | PaymentService | Super Admin | Amount/status/note (API; UI uses mark paid) |
-| `getReportData` | ReportService | Super Admin | Counts |
-| `exportReportCsv` | ReportService | Super Admin | CSV string + filename |
+| `listPayments` | PaymentService | Admin/Accounts | Payment rows |
+| `generatePaymentMilestones` | PaymentService | Admin/Accounts/Sales | Deposit + balance from quoted amount |
+| `markPaymentPaid` | PaymentService | Admin/Accounts | Mark received; may advance stage |
+| `updatePayment` | PaymentService | Admin/Accounts | Amount/status/note |
+| `getReportData` | ReportService | Role reports | Scoped department/stage counts |
+| `exportReportCsv` | ReportService | Role reports | CSV string + filename |
 | `getAdminData` | AdminService | Super Admin | Staff list, settings map, references |
 | `createUser` | AdminService | Super Admin | Staff account + one-time password |
 | `updateUser` | AdminService | Super Admin | Name / work label / active flag |
 | `deactivateUser` | AdminService | Super Admin | Soft disable (kept on API; UI uses delete instead) |
 | `deleteUser` | AdminService | Super Admin | Permanent staff delete + unassign files |
 | `resetStaffPassword` | AdminService | Super Admin | New one-time password |
-| `updateSettings` | AdminService | Super Admin | Company key/value (no Settings UI now) |
+| `updateSettings` | AdminService | Super Admin | Company profile key/value |
 | `saveReferenceItem` | AdminService | Super Admin | Destination or style label |
 
 Internal helpers (underscore names) are not callable from the UI. Important ones:
@@ -279,7 +303,7 @@ Internal helpers (underscore names) are not callable from the UI. Important ones
 
 ## 9. Permanent delete rules
 
-**Client:** Super Admin types the guest’s full name. Deletes Clients row, then Enquiries with that `clientId`, then Activities and Payments for those enquiry ids. Writes `CLIENT_DELETED` to AuditLog.
+**Client:** Super Admin types the guest’s full name. Deletes Clients row, then Enquiries with that `clientId`, then Activities, Payments, and Handovers for those enquiry ids. Writes `CLIENT_DELETED` to AuditLog.
 
 **Staff:** Super Admin types the username. Cannot delete Super Admin or self. Deletes Users row (login gone; existing tokens fail in `getSession_` because the user is missing). Sets `ownerId` to blank on enquiries they owned. Does not delete clients or trip files. Writes `STAFF_DELETED`.
 
@@ -291,7 +315,7 @@ Internal helpers (underscore names) are not callable from the UI. Important ones
 | --- | --- |
 | Add a page | `index.html` nav + `route()` + a `render…` function in `app.js` + maybe a new `api` method |
 | Add a Sheet column | `APP_CONFIG.SHEETS` in `AppConfig.gs` (schema is additive) |
-| Change pipeline stages | `APP_CONFIG.STAGES` and the `STAGES` array in `app.js` |
+| Change pipeline stages | `APP_CONFIG.STAGES` / `STAGE_DEPARTMENT` and the `STAGES` array in `app.js` |
 | Change theme colour | `$lamai-gold` / `$primary` in `_variables.scss` |
 | Change Today card colours | `statCard` tones + `$success` `$warning` `$danger` in `_variables.scss` |
 | Change button size | `$input-btn-padding-y/x` and `.btn-sm` in `_lamai.scss` |

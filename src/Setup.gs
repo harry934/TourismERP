@@ -34,6 +34,7 @@ function initializeWorkspace_() {
 
   seedSettings_();
   seedReferences_();
+  migrateEnquiryStages_();
   return spreadsheet;
 }
 

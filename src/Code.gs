@@ -28,6 +28,9 @@ var METHOD_HANDLERS_ = {
   updateClient: updateClient,
   createActivity: createActivity,
   getWorkData: getWorkData,
+  listHandovers: listHandovers,
+  createHandover: createHandover,
+  acknowledgeHandover: acknowledgeHandover,
   listPayments: listPayments,
   generatePaymentMilestones: generatePaymentMilestones,
   markPaymentPaid: markPaymentPaid,
@@ -44,7 +47,8 @@ var METHOD_HANDLERS_ = {
   saveReferenceItem: saveReferenceItem,
   searchWorkspace: searchWorkspace,
   getNotificationData: getNotificationData,
-  exportReportCsv: exportReportCsv
+  exportReportCsv: exportReportCsv,
+  listArchivedEnquiries: listArchivedEnquiries
 };
 
 function doGet() {

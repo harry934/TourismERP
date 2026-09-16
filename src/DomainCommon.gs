@@ -83,7 +83,64 @@ function dateValue_(value) {
 }
 
 function isLiveStage_(stage) {
-  return stage !== 'Completed' && stage !== 'Lost';
+  return stage !== 'Closed' && stage !== 'Archived' && stage !== 'Completed' && stage !== 'Lost';
+}
+
+function isTerminalStage_(stage) {
+  return stage === 'Closed' || stage === 'Archived';
+}
+
+function departmentForStage_(stage) {
+  if (!stage) return '';
+  if (APP_CONFIG.STAGE_DEPARTMENT && APP_CONFIG.STAGE_DEPARTMENT.hasOwnProperty(stage)) {
+    return APP_CONFIG.STAGE_DEPARTMENT[stage] || '';
+  }
+  return '';
+}
+
+function normalizeStage_(stage) {
+  var text = normalizeText_(stage);
+  if (!text) return 'New enquiry';
+  if (APP_CONFIG.STAGES.indexOf(text) !== -1) return text;
+  if (APP_CONFIG.LEGACY_STAGE_MAP && APP_CONFIG.LEGACY_STAGE_MAP[text]) {
+    return APP_CONFIG.LEGACY_STAGE_MAP[text];
+  }
+  return text;
+}
+
+function migrateEnquiryStages_() {
+  var changed = 0;
+  readAllRecords_(APP_CONFIG.SHEETS.Enquiries.name).forEach(function (enquiry) {
+    var nextStage = normalizeStage_(enquiry.stage);
+    var nextDept = departmentForStage_(nextStage);
+    var needsUpdate = false;
+    if (nextStage !== enquiry.stage) {
+      enquiry.stage = nextStage;
+      needsUpdate = true;
+    }
+    if (normalizeText_(enquiry.department) !== nextDept) {
+      enquiry.department = nextDept;
+      needsUpdate = true;
+    }
+    if (isTerminalStage_(nextStage) && !asBoolean_(enquiry.archived) && nextStage === 'Archived') {
+      enquiry.archived = true;
+      needsUpdate = true;
+    }
+    if (!enquiry.priority) {
+      enquiry.priority = 'Normal';
+      needsUpdate = true;
+    }
+    if (!enquiry.status) {
+      enquiry.status = 'Pending';
+      needsUpdate = true;
+    }
+    if (needsUpdate) {
+      enquiry.updatedAt = nowIso_();
+      upsertRecord_(APP_CONFIG.SHEETS.Enquiries, enquiry);
+      changed += 1;
+    }
+  });
+  return changed;
 }
 
 function randomHex_(size) {
@@ -146,6 +203,12 @@ function slugUsername_(name) {
 }
 
 function publicUser_(record) {
+  var sessionLike = {
+    role: record.role,
+    workLabel: record.workLabel,
+    userId: record.userId
+  };
+  var roleId = resolveRoleId_(sessionLike);
   return {
     userId: record.userId,
     staffUid: record.staffUid,
@@ -153,6 +216,8 @@ function publicUser_(record) {
     displayName: record.displayName,
     role: record.role,
     workLabel: record.workLabel,
+    roleId: roleId,
+    department: departmentForRole_(roleId),
     isActive: asBoolean_(record.isActive),
     mustChangePassword: asBoolean_(record.mustChangePassword)
   };

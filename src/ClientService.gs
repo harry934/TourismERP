@@ -15,6 +15,7 @@ function getClientDetail(payload, session) {
 }
 
 function createClient(payload, session) {
+  requireAction_(session, 'createClient', 'You cannot create clients.');
   var record = buildClient_(payload, session, null);
   upsertRecord_(APP_CONFIG.SHEETS.Clients, record);
   recordAudit_(session.userId, 'CLIENT_CREATED', 'Client', record.clientId, record.fullName);
@@ -22,6 +23,7 @@ function createClient(payload, session) {
 }
 
 function updateClient(payload, session) {
+  requireAction_(session, 'updateClient', 'Only Sales or Admin can edit guest details.');
   var existing = findRecord_(APP_CONFIG.SHEETS.Clients.name, 'clientId', payload.clientId);
   if (!existing) fail_('NOT_FOUND', 'Client was not found.');
   var record = buildClient_(payload, session, existing);
@@ -50,6 +52,9 @@ function deleteClient(payload, session) {
     if (count) {
       deleteRecordsInSet_(APP_CONFIG.SHEETS.Activities, 'enquiryId', enquiryIds);
       deleteRecordsInSet_(APP_CONFIG.SHEETS.Payments, 'enquiryId', enquiryIds);
+      if (APP_CONFIG.SHEETS.Handovers) {
+        deleteRecordsInSet_(APP_CONFIG.SHEETS.Handovers, 'enquiryId', enquiryIds);
+      }
       deleteRecordsWhere_(APP_CONFIG.SHEETS.Enquiries, 'clientId', clientId);
     }
     deleteRecord_(APP_CONFIG.SHEETS.Clients, clientId);

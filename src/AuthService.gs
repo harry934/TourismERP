@@ -67,9 +67,11 @@ function getBootstrap(payload, session) {
   var staff = readAllRecords_(APP_CONFIG.SHEETS.Users.name)
     .filter(function (user) { return asBoolean_(user.isActive); })
     .map(publicUser_);
+  var publicSession = publicUser_(session);
   return {
     needsSetup: false,
-    session: publicUser_(session),
+    session: publicSession,
+    permissions: buildPermissionsPayload_(session),
     staff: staff,
     settings: readSettingsMap_(),
     references: groupedReferences_(),
