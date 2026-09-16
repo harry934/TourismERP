@@ -2,7 +2,7 @@
 
 This file lists **what every screen, button, and server method does**, and where to change it. Product intent lives in [PRD.md](PRD.md). Do not put passwords or seed secrets in this file.
 
-**Stack:** hash-routed UI in `web/` (Bootstrap 5 + Vite) builds to a single `src/Index.html`. Google Apps Script in `src/*.gs` talks to one Google Sheet. Staff open the deployed `/exec` URL.
+**Stack:** hash-routed UI in `web/` (Bootstrap 5 + Vite) builds to a single `src/Index.html`. Google Apps Script in `src/*.gs` talks to one Google Sheet. Staff open the **GitHub Pages** root URL (iframe host in [`index.html`](../index.html)); the Apps Script `/exec` URL remains the backend UI source.
 
 **Build / ship**
 
@@ -12,6 +12,7 @@ npx clasp push --force
 npx clasp deploy -i AKfycbwbknn01ow_3MA3jLijxee5hi1aQ3AsEeLjrf77czLZKxXZIpvk0a8ZV0sIQZHDoVLV
 ```
 
+**Staff host (hide Apps Script banner):** GitHub **Settings → Pages** → Deploy from branch **`main`** / **`/` (root)**. Open `https://<user-or-org>.github.io/<repo>/`. Direct `/exec` still works but may show Google’s attribution banner.
 ---
 
 ## 1. How a click becomes data
