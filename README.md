@@ -1,6 +1,6 @@
-# Lamai Africa Safaris — internal workspace
+# Tourism Operations ERP — internal workspace
 
-Enquiry-to-operations board for Lamai staff. Product requirements: [docs/PRD.md](docs/PRD.md). Map of every screen, button, and server method: [docs/SYSTEM.md](docs/SYSTEM.md).
+Enquiry-to-operations board for tourism staff. Product requirements: [docs/PRD.md](docs/PRD.md). Map of every screen, button, and server method: [docs/SYSTEM.md](docs/SYSTEM.md).
 
 ## Run
 
@@ -17,7 +17,7 @@ Open the **GitHub Pages** URL after you enable Pages (staff entry). The page ifr
 
 1. Push this repo to GitHub.
 2. Repo **Settings → Pages → Build and deployment**: Source **Deploy from a branch**, branch **`main`**, folder **`/` (root)**.
-3. Staff open `https://<user-or-org>.github.io/<repo>/` (for example `https://kibag.github.io/Tourism/`).
+3. Staff open `https://<user-or-org>.github.io/<repo>/` (for example `https://username.github.io/TourismERP/`).
 
 The raw Apps Script `/exec` URL still works but may show Google’s banner. Update the iframe `src` in root [`index.html`](index.html) only if you create a **new** deployment id.
 
