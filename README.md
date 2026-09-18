@@ -1,26 +1,14 @@
-# Tourism Operations ERP — internal workspace
+# Tourism Operations ERP — staff entry
 
-Enquiry-to-operations board for tourism staff. Product requirements: [docs/PRD.md](docs/PRD.md). Map of every screen, button, and server method: [docs/SYSTEM.md](docs/SYSTEM.md).
+This public repository only hosts the **GitHub Pages** shell that iframes the live Apps Script app. Application source code is not published here.
 
-## Run
+## Staff URL
 
-```bash
-npm install --prefix web
-npm run build:ui
-npx clasp push --force
-npx clasp deploy
-```
+1. Repo **Settings → Pages → Build and deployment**: Source **Deploy from a branch**, branch **`main`**, folder **`/` (root)**.
+2. Staff open `https://harry934.github.io/TourismERP/`.
 
-Open the **GitHub Pages** URL after you enable Pages (staff entry). The page iframes the Apps Script app so Google’s “created by a Google Apps Script user” banner is usually hidden.
+The page loads the deployed Apps Script `/exec` URL inside an iframe so Google’s “created by a Google Apps Script user” banner is usually hidden.
 
-### Staff URL (GitHub Pages)
+## Update the app link
 
-1. Push this repo to GitHub.
-2. Repo **Settings → Pages → Build and deployment**: Source **Deploy from a branch**, branch **`main`**, folder **`/` (root)**.
-3. Staff open `https://<user-or-org>.github.io/<repo>/` (for example `https://username.github.io/TourismERP/`).
-
-The raw Apps Script `/exec` URL still works but may show Google’s banner. Update the iframe `src` in root [`index.html`](index.html) only if you create a **new** deployment id.
-
-First visit shows a short logo splash, then **Create Super Admin** if the Sheet has no admin yet. Pick your own username and password. There is no demo seed data and no password in this repository.
-
-The generated file `src/Index.html` is produced by `npm run build:ui` and is not stored in git. Clasp deploys from `src/` after you build.
+If you create a **new** Apps Script deployment, set the new `/exec` URL in [`index.html`](index.html) and push to `main`.
